@@ -14,9 +14,7 @@ pub fn disassemble_chunk(chunk: &Chunk, name: &str) {
         }
 
         let byte = chunk.code[offset];
-        let opcode = Opcode::try_from(byte);
-
-        if let Ok(opcode) = opcode {
+        if let Ok(opcode) = Opcode::try_from(byte) {
             offset = disassemble_instruction(&opcode, chunk, offset);
         } else {
             println!("Unknown opcode {byte}");
