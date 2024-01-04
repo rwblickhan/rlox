@@ -4,6 +4,11 @@ use crate::value::Value;
 pub enum Opcode {
     Return = 0,
     Constant,
+    Negate,
+    Add,
+    Subtract,
+    Multiply,
+    Divide,
 }
 
 pub struct Chunk {
@@ -38,7 +43,26 @@ impl TryFrom<u8> for Opcode {
         match value {
             0 => Ok(Opcode::Return),
             1 => Ok(Opcode::Constant),
+            2 => Ok(Opcode::Negate),
+            3 => Ok(Opcode::Add),
+            4 => Ok(Opcode::Subtract),
+            5 => Ok(Opcode::Multiply),
+            6 => Ok(Opcode::Divide),
             _ => Err(()),
+        }
+    }
+}
+
+impl std::fmt::Display for Opcode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Opcode::Return => write!(f, "OP_RETURN"),
+            Opcode::Constant => write!(f, "OP_CONSTANT"),
+            Opcode::Negate => write!(f, "OP_NEGATE"),
+            Opcode::Add => write!(f, "OP_ADD"),
+            Opcode::Subtract => write!(f, "OP_SUBTRACT"),
+            Opcode::Multiply => write!(f, "OP_MULTIPLY"),
+            Opcode::Divide => write!(f, "OP_DIVIDE"),
         }
     }
 }

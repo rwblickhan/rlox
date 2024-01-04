@@ -23,23 +23,28 @@ pub fn disassemble_chunk(chunk: &Chunk, name: &str) {
     }
 }
 
-fn disassemble_instruction(opcode: &Opcode, chunk: &Chunk, offset: usize) -> usize {
+pub fn disassemble_instruction(opcode: &Opcode, chunk: &Chunk, offset: usize) -> usize {
     match opcode {
-        Opcode::Return => disassemble_simple_instruction("OP_RETURN", offset),
-        Opcode::Constant => disassemble_constant_instruction("OP_CONSTANT", chunk, offset),
+        Opcode::Return => disassemble_simple_instruction(opcode, offset),
+        Opcode::Constant => disassemble_constant_instruction(opcode, chunk, offset),
+        Opcode::Negate => disassemble_simple_instruction(opcode, offset),
+        Opcode::Add => disassemble_simple_instruction(opcode, offset),
+        Opcode::Subtract => disassemble_simple_instruction(opcode, offset),
+        Opcode::Multiply => disassemble_simple_instruction(opcode, offset),
+        Opcode::Divide => disassemble_simple_instruction(opcode, offset),
     }
 }
 
-fn disassemble_simple_instruction(name: &str, offset: usize) -> usize {
-    println!("{}", name);
+fn disassemble_simple_instruction(opcode: &Opcode, offset: usize) -> usize {
+    println!("{}", opcode);
     return offset + 1;
 }
 
-fn disassemble_constant_instruction(name: &str, chunk: &Chunk, offset: usize) -> usize {
-    let constant = chunk.code[offset + 1];
+fn disassemble_constant_instruction(opcode: &Opcode, chunk: &Chunk, offset: usize) -> usize {
+    let constant_offset = chunk.code[offset + 1];
     println!(
         "{:<16} {:>4} '{}'",
-        name, constant, chunk.constants[constant as usize]
+        opcode, constant_offset, chunk.constants[constant_offset as usize]
     );
     return offset + 2;
 }
