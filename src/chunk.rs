@@ -1,5 +1,8 @@
+use derive_more::Display;
+
 use crate::value::Value;
 
+#[derive(Display)]
 #[repr(u8)]
 pub enum Opcode {
     Return = 0,
@@ -49,20 +52,6 @@ impl TryFrom<u8> for Opcode {
             5 => Ok(Opcode::Multiply),
             6 => Ok(Opcode::Divide),
             _ => Err(()),
-        }
-    }
-}
-
-impl std::fmt::Display for Opcode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Opcode::Return => write!(f, "OP_RETURN"),
-            Opcode::Constant => write!(f, "OP_CONSTANT"),
-            Opcode::Negate => write!(f, "OP_NEGATE"),
-            Opcode::Add => write!(f, "OP_ADD"),
-            Opcode::Subtract => write!(f, "OP_SUBTRACT"),
-            Opcode::Multiply => write!(f, "OP_MULTIPLY"),
-            Opcode::Divide => write!(f, "OP_DIVIDE"),
         }
     }
 }
