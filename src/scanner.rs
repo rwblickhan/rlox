@@ -1,13 +1,14 @@
 use derive_more::Display;
+use std::fmt::Display;
 
-pub struct Scanner {
-    pub source: String,
+pub struct Scanner<'a> {
+    pub source: &'a str,
     pub start: usize,
     pub current: usize,
     pub line: usize,
 }
 
-#[derive(Display)]
+#[derive(Display, Clone, Copy, PartialEq, Eq)]
 pub enum TokenType {
     // Single-character tokens.
     LeftParen,
@@ -52,18 +53,32 @@ pub enum TokenType {
     Var,
     While,
 
-    Error,
     EOF,
 }
 
+#[derive(Clone, Copy)]
 pub struct Token<'a> {
     pub token_type: TokenType,
     pub source: &'a str,
     pub line: usize,
 }
 
-impl Scanner {
-    pub fn new(source: String) -> Scanner {
+pub enum ScanError {
+    UnexpectedCharacter,
+    UnterminatedString,
+}
+
+impl Display for ScanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScanError::UnexpectedCharacter => write!(f, "Unexpected character"),
+            ScanError::UnterminatedString => write!(f, "Unterminated string"),
+        }
+    }
+}
+
+impl<'a> Scanner<'a> {
+    pub fn new(source: &'a str) -> Scanner<'a> {
         Scanner {
             source,
             start: 0,
@@ -72,7 +87,7 @@ impl Scanner {
         }
     }
 
-    pub fn scan_token(&mut self) -> Token {
+    pub fn scan_token(&mut self) -> Result<Token<'a>, ScanError> {
         self.skip_whitespace();
         self.start = self.current;
 
@@ -133,10 +148,10 @@ impl Scanner {
             _ => (),
         }
 
-        return self.error_token("Unexpected character.");
+        return Err(ScanError::UnexpectedCharacter);
     }
 
-    fn string(&mut self) -> Token {
+    fn string(&mut self) -> Result<Token<'a>, ScanError> {
         while self.peek() != '"' && !self.is_at_end() {
             if self.peek() == '\n' {
                 self.line += 1;
@@ -145,14 +160,14 @@ impl Scanner {
         }
 
         if self.is_at_end() {
-            return self.error_token("Unterminated string.");
+            return Err(ScanError::UnterminatedString);
         }
 
         self.advance();
         self.make_token(TokenType::String)
     }
 
-    fn identifier(&mut self) -> Token {
+    fn identifier(&mut self) -> Result<Token<'a>, ScanError> {
         while Scanner::is_alpha(self.peek()) || Scanner::is_digit(self.peek()) {
             self.advance();
         }
@@ -215,7 +230,7 @@ impl Scanner {
         TokenType::Identifier
     }
 
-    fn number(&mut self) -> Token {
+    fn number(&mut self) -> Result<Token<'a>, ScanError> {
         while Scanner::is_digit(self.peek()) {
             self.advance();
         }
@@ -294,19 +309,11 @@ impl Scanner {
         }
     }
 
-    fn make_token(&self, token_type: TokenType) -> Token {
-        Token {
+    fn make_token(&self, token_type: TokenType) -> Result<Token<'a>, ScanError> {
+        Ok(Token {
             token_type,
             source: &self.source[self.start..self.current],
             line: self.line,
-        }
-    }
-
-    fn error_token<'a>(&'a self, message: &'a str) -> Token {
-        Token {
-            token_type: TokenType::Error,
-            source: message,
-            line: self.line,
-        }
+        })
     }
 }

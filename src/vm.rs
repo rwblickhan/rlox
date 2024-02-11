@@ -37,8 +37,12 @@ impl VM {
     }
 
     pub fn interpret(&mut self, source: String) -> InterpretResult {
-        compiler::compile(source);
-        InterpretResult::Ok
+        let mut compiler = compiler::Compiler::new(source.as_str(), &mut self.chunk);
+        if !compiler.compile(true) {
+            return InterpretResult::CompileError;
+        }
+
+        self.run(true)
     }
 
     pub fn run(&mut self, debug_trace_execution: bool) -> InterpretResult {
