@@ -19,10 +19,18 @@ pub enum InterpretResult {
 }
 
 macro_rules! binary_op {
-    ($struct:expr, $op:tt) => {
-        let b = $struct.pop_stack();
-        let a = $struct.pop_stack();
-        $struct.push_stack(a $op b);
+    ($struct:expr, $op:tt, $value_converter:tt) => {
+        let (Value::Number(_), Value::Number(_)) = ($struct.peek(0), $struct.peek(1)) else {
+            $struct.runtime_error("Operands must be numbers.");
+            return InterpretResult::RuntimeError;
+        };
+        let Value::Number(b) = $struct.pop_stack() else {
+            return InterpretResult::RuntimeError;
+        };
+        let Value::Number(a) = $struct.pop_stack() else {
+            return InterpretResult::RuntimeError;
+        };
+        $struct.push_stack($value_converter(a $op b));
     };
 }
 
@@ -31,7 +39,7 @@ impl VM {
         VM {
             chunk: Chunk::new(),
             ip: 0,
-            stack: [0.0; STACK_MAX],
+            stack: [Value::Number(0.0); STACK_MAX],
             stack_top: 0,
         }
     }
@@ -63,24 +71,55 @@ impl VM {
                         self.push_stack(constant);
                     }
                     Opcode::Negate => {
-                        let value = -self.pop_stack();
-                        self.push_stack(value);
+                        let value = self.peek(0);
+                        match value {
+                            Value::Number(number_value) => {
+                                self.push_stack(Value::Number(-number_value));
+                            }
+                            _ => {
+                                self.runtime_error("Operand must be a number.");
+                                return InterpretResult::RuntimeError;
+                            }
+                        }
                     }
                     Opcode::Return => {
                         println!("{}", self.pop_stack());
                         return InterpretResult::Ok;
                     }
+                    Opcode::Nil => {
+                        self.push_stack(Value::Nil);
+                    }
+                    Opcode::True => {
+                        self.push_stack(Value::Bool(true));
+                    }
+                    Opcode::False => {
+                        self.push_stack(Value::Bool(false));
+                    }
                     Opcode::Add => {
-                        binary_op!(self, +);
+                        binary_op!(self, +, (Value::to_number_value));
                     }
                     Opcode::Subtract => {
-                        binary_op!(self, -);
+                        binary_op!(self, -, (Value::to_number_value));
                     }
                     Opcode::Multiply => {
-                        binary_op!(self, *);
+                        binary_op!(self, *, (Value::to_number_value));
                     }
                     Opcode::Divide => {
-                        binary_op!(self, /);
+                        binary_op!(self, /, (Value::to_number_value));
+                    }
+                    Opcode::Not => {
+                        let value = self.pop_stack();
+                        self.push_stack(Value::Bool(value.is_falsey()));
+                    }
+                    Opcode::Equal => {
+                        let (a, b) = (self.pop_stack(), self.pop_stack());
+                        self.push_stack(Value::Bool(a == b));
+                    }
+                    Opcode::Greater => {
+                        binary_op!(self, >, (Value::to_bool_value));
+                    }
+                    Opcode::Less => {
+                        binary_op!(self, <, (Value::to_bool_value));
                     }
                 }
             }
@@ -106,5 +145,21 @@ impl VM {
     fn pop_stack(&mut self) -> Value {
         self.stack_top -= 1;
         self.stack[self.stack_top]
+    }
+
+    fn peek(&self, distance: usize) -> Value {
+        self.stack[self.stack_top - 1 - distance]
+    }
+
+    fn reset_stack(&mut self) {
+        self.stack_top = 0;
+    }
+
+    fn runtime_error(&mut self, message: &str) {
+        eprintln!("{message}");
+        let instruction = self.ip - 1;
+        let line = self.chunk.lines[instruction];
+        eprintln!("[line {line}] in script");
+        self.reset_stack();
     }
 }

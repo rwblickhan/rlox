@@ -16,6 +16,7 @@ enum PrefixParserType {
     Grouping,
     Unary,
     Number,
+    Literal,
 }
 
 enum InfixParserType {
@@ -132,7 +133,16 @@ impl<'a> Compiler<'a> {
 
     fn number(&mut self) {
         let value = self.previous.source.parse::<f64>().unwrap();
-        self.emit_constant(value);
+        self.emit_constant(Value::Number(value));
+    }
+
+    fn literal(&mut self) {
+        match self.previous.token_type {
+            TokenType::False => self.emit_byte(Opcode::False as u8),
+            TokenType::Nil => self.emit_byte(Opcode::Nil as u8),
+            TokenType::True => self.emit_byte(Opcode::True as u8),
+            _ => self.error("Expect literal."),
+        }
     }
 
     fn grouping(&mut self) {
@@ -145,6 +155,7 @@ impl<'a> Compiler<'a> {
         self.parse_precedence(Precedence::Unary);
         match operator_type {
             TokenType::Minus => self.emit_byte(Opcode::Negate as u8),
+            TokenType::Bang => self.emit_byte(Opcode::Not as u8),
             _ => self.error("Expect unary operator."),
         }
     }
@@ -157,6 +168,12 @@ impl<'a> Compiler<'a> {
             TokenType::Minus => self.emit_byte(Opcode::Subtract as u8),
             TokenType::Star => self.emit_byte(Opcode::Multiply as u8),
             TokenType::Slash => self.emit_byte(Opcode::Divide as u8),
+            TokenType::BangEqual => self.emit_bytes(Opcode::Equal as u8, Opcode::Not as u8),
+            TokenType::EqualEqual => self.emit_byte(Opcode::Equal as u8),
+            TokenType::Greater => self.emit_byte(Opcode::Greater as u8),
+            TokenType::GreaterEqual => self.emit_bytes(Opcode::Less as u8, Opcode::Not as u8),
+            TokenType::Less => self.emit_byte(Opcode::Less as u8),
+            TokenType::LessEqual => self.emit_bytes(Opcode::Greater as u8, Opcode::Not as u8),
             _ => self.error("Expect binary operator."),
         }
     }
@@ -169,6 +186,7 @@ impl<'a> Compiler<'a> {
                 PrefixParserType::Grouping => self.grouping(),
                 PrefixParserType::Unary => self.unary(),
                 PrefixParserType::Number => self.number(),
+                PrefixParserType::Literal => self.literal(),
             },
             None => self.error("Expect expression with prefix parser."),
         }
@@ -240,6 +258,16 @@ impl TokenType {
             TokenType::Plus => Precedence::Term,
             TokenType::Slash => Precedence::Factor,
             TokenType::Star => Precedence::Factor,
+            TokenType::Number => Precedence::None,
+            TokenType::True => Precedence::None,
+            TokenType::False => Precedence::None,
+            TokenType::Bang => Precedence::None,
+            TokenType::BangEqual => Precedence::Equality,
+            TokenType::EqualEqual => Precedence::Equality,
+            TokenType::Greater => Precedence::Comparison,
+            TokenType::GreaterEqual => Precedence::Comparison,
+            TokenType::Less => Precedence::Comparison,
+            TokenType::LessEqual => Precedence::Comparison,
             _ => Precedence::None,
         }
     }
@@ -249,6 +277,10 @@ impl TokenType {
             TokenType::LeftParen => Some(PrefixParserType::Grouping),
             TokenType::Minus => Some(PrefixParserType::Unary),
             TokenType::Number => Some(PrefixParserType::Number),
+            TokenType::Nil => Some(PrefixParserType::Literal),
+            TokenType::True => Some(PrefixParserType::Literal),
+            TokenType::False => Some(PrefixParserType::Literal),
+            TokenType::Bang => Some(PrefixParserType::Unary),
             _ => None,
         }
     }
@@ -259,6 +291,12 @@ impl TokenType {
             TokenType::Minus => Some(InfixParserType::Binary),
             TokenType::Star => Some(InfixParserType::Binary),
             TokenType::Slash => Some(InfixParserType::Binary),
+            TokenType::BangEqual => Some(InfixParserType::Binary),
+            TokenType::EqualEqual => Some(InfixParserType::Binary),
+            TokenType::Greater => Some(InfixParserType::Binary),
+            TokenType::GreaterEqual => Some(InfixParserType::Binary),
+            TokenType::Less => Some(InfixParserType::Binary),
+            TokenType::LessEqual => Some(InfixParserType::Binary),
             _ => None,
         }
     }

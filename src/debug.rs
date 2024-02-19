@@ -28,16 +28,23 @@ pub fn disassemble_instruction(opcode: &Opcode, chunk: &Chunk, offset: usize) ->
         Opcode::Return => disassemble_simple_instruction(opcode, offset),
         Opcode::Constant => disassemble_constant_instruction(opcode, chunk, offset),
         Opcode::Negate => disassemble_simple_instruction(opcode, offset),
+        Opcode::Nil => disassemble_simple_instruction(opcode, offset),
+        Opcode::True => disassemble_simple_instruction(opcode, offset),
+        Opcode::False => disassemble_simple_instruction(opcode, offset),
         Opcode::Add => disassemble_simple_instruction(opcode, offset),
         Opcode::Subtract => disassemble_simple_instruction(opcode, offset),
         Opcode::Multiply => disassemble_simple_instruction(opcode, offset),
         Opcode::Divide => disassemble_simple_instruction(opcode, offset),
+        Opcode::Not => disassemble_simple_instruction(opcode, offset),
+        Opcode::Equal => disassemble_simple_instruction(opcode, offset),
+        Opcode::Greater => disassemble_simple_instruction(opcode, offset),
+        Opcode::Less => disassemble_simple_instruction(opcode, offset),
     }
 }
 
 fn disassemble_simple_instruction(opcode: &Opcode, offset: usize) -> usize {
     println!("{}", opcode);
-    return offset + 1;
+    offset + 1
 }
 
 fn disassemble_constant_instruction(opcode: &Opcode, chunk: &Chunk, offset: usize) -> usize {
@@ -46,5 +53,5 @@ fn disassemble_constant_instruction(opcode: &Opcode, chunk: &Chunk, offset: usiz
         "{:<16} {:>4} '{}'",
         opcode, constant_offset, chunk.constants[constant_offset as usize]
     );
-    return offset + 2;
+    offset + 2
 }
