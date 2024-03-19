@@ -1,7 +1,9 @@
 use crate::chunk::{Chunk, Opcode};
 use crate::compiler;
 use crate::debug;
+use crate::object::Obj;
 use crate::value::Value;
+use std::rc::Rc;
 
 const STACK_MAX: usize = 256;
 
@@ -10,6 +12,7 @@ pub struct VM {
     pub ip: usize,
     pub stack: [Value; STACK_MAX],
     pub stack_top: usize,
+    pub heap: Vec<Rc<Obj>>,
 }
 
 pub enum InterpretResult {
@@ -36,11 +39,13 @@ macro_rules! binary_op {
 
 impl VM {
     pub fn new() -> VM {
+        const ARRAY_REPEAT_VALUE: Value = Value::Number(0.0);
         VM {
             chunk: Chunk::new(),
             ip: 0,
-            stack: [Value::Number(0.0); STACK_MAX],
+            stack: [ARRAY_REPEAT_VALUE; STACK_MAX],
             stack_top: 0,
+            heap: Vec::new(),
         }
     }
 
@@ -96,7 +101,14 @@ impl VM {
                         self.push_stack(Value::Bool(false));
                     }
                     Opcode::Add => {
-                        binary_op!(self, +, (Value::to_number_value));
+                        if let (Value::Obj(_), Value::Obj(_)) = (self.peek(0), self.peek(1)) {
+                            match self.concatenate() {
+                                Ok(_) => {}
+                                Err(err) => return err,
+                            }
+                        } else {
+                            binary_op!(self, +, (Value::to_number_value));
+                        }
                     }
                     Opcode::Subtract => {
                         binary_op!(self, -, (Value::to_number_value));
@@ -134,7 +146,7 @@ impl VM {
 
     fn read_constant(&mut self) -> Value {
         let constant = self.read_byte() as usize;
-        self.chunk.constants[constant]
+        self.chunk.constants[constant].clone()
     }
 
     fn push_stack(&mut self, value: Value) {
@@ -144,11 +156,11 @@ impl VM {
 
     fn pop_stack(&mut self) -> Value {
         self.stack_top -= 1;
-        self.stack[self.stack_top]
+        self.stack[self.stack_top].clone()
     }
 
     fn peek(&self, distance: usize) -> Value {
-        self.stack[self.stack_top - 1 - distance]
+        self.stack[self.stack_top - 1 - distance].clone()
     }
 
     fn reset_stack(&mut self) {
@@ -161,5 +173,32 @@ impl VM {
         let line = self.chunk.lines[instruction];
         eprintln!("[line {line}] in script");
         self.reset_stack();
+    }
+
+    fn heap_alloc(&mut self, obj: Obj) -> Rc<Obj> {
+        let rc = Rc::new(obj);
+        self.heap.push(rc.clone());
+        rc
+    }
+
+    fn concatenate(&mut self) -> Result<(), InterpretResult> {
+        let b = self.pop_stack();
+        let a = self.pop_stack();
+        let (Value::Obj(rc1), Value::Obj(rc2)) = (a, b) else {
+            self.runtime_error("Concatenation operands must be objects.");
+            return Err(InterpretResult::CompileError);
+        };
+        let obj1 = rc1.as_ref();
+        let obj2 = rc2.as_ref();
+
+        let (Obj::String(s1), Obj::String(s2)) = (obj1, obj2) else {
+            self.runtime_error("Concatenation operands must be strings.");
+            return Err(InterpretResult::CompileError);
+        };
+
+        let new_obj = self.heap_alloc(Obj::String(format!("{}{}", s1, s2)));
+        let new_value = Value::Obj(new_obj);
+        self.push_stack(new_value);
+        Ok(())
     }
 }

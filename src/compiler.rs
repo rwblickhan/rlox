@@ -1,7 +1,9 @@
 use crate::chunk::{Chunk, Opcode};
 use crate::debug::disassemble_chunk;
+use crate::object::Obj;
 use crate::scanner::{Scanner, Token, TokenType};
 use crate::value::Value;
+use std::rc::Rc;
 
 pub struct Compiler<'a> {
     compiling_chunk: &'a mut Chunk,
@@ -17,6 +19,7 @@ enum PrefixParserType {
     Unary,
     Number,
     Literal,
+    String,
 }
 
 enum InfixParserType {
@@ -145,6 +148,13 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn string(&mut self) {
+        // Trim the leading and trailing quotes
+        let string = self.previous.source[1..self.previous.source.len() - 1].to_string();
+        // This will never be garbage collected, but that's okay, because it's a constant
+        self.emit_constant(Value::Obj(Rc::new(Obj::String(string))))
+    }
+
     fn grouping(&mut self) {
         self.expression();
         self.consume(TokenType::RightParen, "Expect ')' after expression.");
@@ -187,6 +197,7 @@ impl<'a> Compiler<'a> {
                 PrefixParserType::Unary => self.unary(),
                 PrefixParserType::Number => self.number(),
                 PrefixParserType::Literal => self.literal(),
+                PrefixParserType::String => self.string(),
             },
             None => self.error("Expect expression with prefix parser."),
         }
@@ -268,6 +279,7 @@ impl TokenType {
             TokenType::GreaterEqual => Precedence::Comparison,
             TokenType::Less => Precedence::Comparison,
             TokenType::LessEqual => Precedence::Comparison,
+            TokenType::String => Precedence::None,
             _ => Precedence::None,
         }
     }
@@ -281,6 +293,7 @@ impl TokenType {
             TokenType::True => Some(PrefixParserType::Literal),
             TokenType::False => Some(PrefixParserType::Literal),
             TokenType::Bang => Some(PrefixParserType::Unary),
+            TokenType::String => Some(PrefixParserType::String),
             _ => None,
         }
     }
