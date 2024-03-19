@@ -49,9 +49,9 @@ fn run_file(vm: &mut VM, path: &str) {
 }
 
 fn read_file(path: &str) -> String {
-    let mut file = File::open(path).expect(format!("Failed to open file {path}").as_ref());
+    let mut file = File::open(path).unwrap_or_else(|_| panic!("Failed to open file {path}"));
     let mut contents = String::new();
     file.read_to_string(&mut contents)
-        .expect(format!("Failed to read contents of {path}").as_ref());
+        .unwrap_or_else(|_| panic!("Failed to read contents of {path}"));
     contents
 }

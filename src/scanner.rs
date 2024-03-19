@@ -53,7 +53,7 @@ pub enum TokenType {
     Var,
     While,
 
-    EOF,
+    Eof,
 }
 
 #[derive(Clone, Copy)]
@@ -92,7 +92,7 @@ impl<'a> Scanner<'a> {
         self.start = self.current;
 
         if self.is_at_end() {
-            return self.make_token(TokenType::EOF);
+            return self.make_token(TokenType::Eof);
         }
 
         let c = self.advance();
@@ -148,7 +148,7 @@ impl<'a> Scanner<'a> {
             _ => (),
         }
 
-        return Err(ScanError::UnexpectedCharacter);
+        Err(ScanError::UnexpectedCharacter)
     }
 
     fn string(&mut self) -> Result<Token<'a>, ScanError> {
@@ -266,7 +266,7 @@ impl<'a> Scanner<'a> {
             return false;
         }
         self.current += 1;
-        return true;
+        true
     }
 
     fn is_at_end(&self) -> bool {
@@ -278,7 +278,7 @@ impl<'a> Scanner<'a> {
     }
 
     fn is_digit(c: char) -> bool {
-        c.is_digit(10)
+        c.is_ascii_digit()
     }
 
     fn skip_whitespace(&mut self) {

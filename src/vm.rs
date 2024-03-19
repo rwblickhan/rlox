@@ -62,7 +62,7 @@ impl VM {
                     for slot in self.stack[0..self.stack_top].iter() {
                         print!("[ {slot} ]");
                     }
-                    print!("\n");
+                    println!();
                     debug::disassemble_instruction(&instruction, &self.chunk, self.ip - 1);
                 }
                 match instruction {

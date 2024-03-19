@@ -61,14 +61,14 @@ impl<'a> Compiler<'a> {
     pub fn new(source: &'a str, compiling_chunk: &'a mut Chunk) -> Compiler<'a> {
         let mut scanner = Scanner::new(source);
         let starting_token = Compiler::advance_to_start(&mut scanner);
-        return Compiler {
+        Compiler {
             compiling_chunk,
             current: starting_token,
             previous: starting_token,
             scanner,
             had_error: false,
             panic_mode: false,
-        };
+        }
     }
 
     // Parsing
@@ -119,7 +119,7 @@ impl<'a> Compiler<'a> {
 
         eprint!("[line {}] Error", token.line);
         match token.token_type {
-            TokenType::EOF => eprint!(" at end"),
+            TokenType::Eof => eprint!(" at end"),
             _ => eprint!(" at '{}'", token.source),
         }
         eprintln!(": {message}");
@@ -210,7 +210,7 @@ impl<'a> Compiler<'a> {
 
     pub fn compile(&mut self, debug_print_code: bool) -> bool {
         self.expression();
-        self.consume(TokenType::EOF, "Expect end of expression.");
+        self.consume(TokenType::Eof, "Expect end of expression.");
         self.end_compiler(debug_print_code);
         !self.had_error
     }
