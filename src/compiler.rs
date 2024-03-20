@@ -1,6 +1,6 @@
 use crate::chunk::{Chunk, Opcode};
 use crate::debug::disassemble_chunk;
-use crate::object::Obj;
+use crate::object::{Obj, ObjString};
 use crate::scanner::{Scanner, Token, TokenType};
 use crate::value::Value;
 use std::rc::Rc;
@@ -152,7 +152,9 @@ impl<'a> Compiler<'a> {
         // Trim the leading and trailing quotes
         let string = self.previous.source[1..self.previous.source.len() - 1].to_string();
         // This will never be garbage collected, but that's okay, because it's a constant
-        self.emit_constant(Value::Obj(Rc::new(Obj::new_from_string(string))));
+        self.emit_constant(Value::Obj(Rc::new(Obj::String(
+            ObjString::new_from_string(string),
+        ))));
     }
 
     fn grouping(&mut self) {

@@ -1,8 +1,16 @@
-use std::{fmt::Display, hash::Hash};
+use derive_more::Display;
+use std::fmt::Display;
+use std::hash::Hash;
+
+#[derive(Display, Clone, PartialEq)]
+pub(crate) enum Obj {
+    String(ObjString),
+}
 
 #[derive(Clone, PartialEq)]
-pub(crate) enum Obj {
-    String { string: String, hash: u32 },
+pub(crate) struct ObjString {
+    string: String,
+    hash: u32,
 }
 
 fn hash_string(str: &str) -> u32 {
@@ -14,17 +22,21 @@ fn hash_string(str: &str) -> u32 {
     hash
 }
 
-impl Obj {
-    pub(crate) fn new_from_string(string: String) -> Obj {
+impl ObjString {
+    pub(crate) fn new_from_string(string: String) -> ObjString {
         let hash = hash_string(&string);
-        Obj::String { string, hash }
+        ObjString { string, hash }
     }
 }
 
-impl Display for Obj {
+impl Display for ObjString {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Obj::String { string, .. } => write!(f, "{}", string),
-        }
+        write!(f, "{}", self.string)
+    }
+}
+
+impl Hash for ObjString {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.hash.hash(state);
     }
 }
