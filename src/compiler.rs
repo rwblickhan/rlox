@@ -152,7 +152,7 @@ impl<'a> Compiler<'a> {
         // Trim the leading and trailing quotes
         let string = self.previous.source[1..self.previous.source.len() - 1].to_string();
         // This will never be garbage collected, but that's okay, because it's a constant
-        self.emit_constant(Value::Obj(Rc::new(Obj::String(string))))
+        self.emit_constant(Value::Obj(Rc::new(Obj::new_from_string(string))));
     }
 
     fn grouping(&mut self) {

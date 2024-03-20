@@ -191,12 +191,12 @@ impl VM {
         let obj1 = rc1.as_ref();
         let obj2 = rc2.as_ref();
 
-        let (Obj::String(s1), Obj::String(s2)) = (obj1, obj2) else {
+        let (Obj::String { string: s1, .. }, Obj::String { string: s2, .. }) = (obj1, obj2) else {
             self.runtime_error("Concatenation operands must be strings.");
             return Err(InterpretResult::CompileError);
         };
 
-        let new_obj = self.heap_alloc(Obj::String(format!("{}{}", s1, s2)));
+        let new_obj = self.heap_alloc(Obj::new_from_string(format!("{}{}", s1, s2)));
         let new_value = Value::Obj(new_obj);
         self.push_stack(new_value);
         Ok(())
