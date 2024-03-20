@@ -7,7 +7,7 @@ pub(crate) enum Obj {
     String(ObjString),
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Eq)]
 pub(crate) struct ObjString {
     string: String,
     hash: u32,

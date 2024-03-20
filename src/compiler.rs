@@ -20,6 +20,7 @@ enum PrefixParserType {
     Number,
     Literal,
     String,
+    Variable,
 }
 
 enum InfixParserType {
@@ -107,6 +108,18 @@ impl<'a> Compiler<'a> {
         self.error_at_current(message)
     }
 
+    fn match_token(&mut self, token_type: TokenType) -> bool {
+        if !self.check(token_type) {
+            return false;
+        };
+        self.advance();
+        true
+    }
+
+    fn check(&mut self, token_type: TokenType) -> bool {
+        self.current.token_type == token_type
+    }
+
     fn error_at_current(&mut self, message: &str) {
         self.error_at(self.current, message)
     }
@@ -134,6 +147,93 @@ impl<'a> Compiler<'a> {
         self.parse_precedence(Precedence::Assignment);
     }
 
+    fn declaration(&mut self) {
+        if self.match_token(TokenType::Var) {
+            self.var_declaration();
+        } else {
+            self.statement();
+        }
+        if self.panic_mode {
+            self.synchronize();
+        }
+    }
+
+    fn var_declaration(&mut self) {
+        let global = self.parse_variable("Expect variable name.");
+
+        if self.match_token(TokenType::Equal) {
+            self.expression();
+        } else {
+            self.emit_byte(Opcode::Nil as u8);
+        }
+        self.consume(
+            TokenType::Semicolon,
+            "Expect ';' after variable declaration.",
+        );
+
+        self.define_variable(global);
+    }
+
+    fn parse_variable(&mut self, error_message: &str) -> u8 {
+        self.consume(TokenType::Identifier, error_message);
+        self.identifier_constant(self.previous.source)
+    }
+
+    fn identifier_constant(&mut self, name: &str) -> u8 {
+        self.make_constant(Value::Obj(Rc::new(Obj::String(
+            ObjString::new_from_string(name.to_owned()),
+        ))))
+    }
+
+    fn define_variable(&mut self, global: u8) {
+        self.emit_bytes(Opcode::DefineGlobal as u8, global);
+    }
+
+    fn statement(&mut self) {
+        if self.match_token(TokenType::Print) {
+            self.print_statement();
+        } else {
+            self.expression_statement();
+        }
+    }
+
+    fn print_statement(&mut self) {
+        self.expression();
+        self.consume(TokenType::Semicolon, "Expect ';' after print expression.");
+        self.emit_byte(Opcode::Print as u8);
+    }
+
+    fn expression_statement(&mut self) {
+        self.expression();
+        self.consume(
+            TokenType::Semicolon,
+            "Expect ';' after expression statement expression.",
+        );
+        self.emit_byte(Opcode::Pop as u8);
+    }
+
+    fn synchronize(&mut self) {
+        self.panic_mode = false;
+
+        while self.current.token_type != TokenType::Eof {
+            if self.previous.token_type == TokenType::Semicolon {
+                return;
+            }
+            match self.current.token_type {
+                TokenType::Class
+                | TokenType::Fun
+                | TokenType::Var
+                | TokenType::For
+                | TokenType::If
+                | TokenType::While
+                | TokenType::Print
+                | TokenType::Return => return,
+                _ => (),
+            }
+            self.advance();
+        }
+    }
+
     fn number(&mut self) {
         let value = self.previous.source.parse::<f64>().unwrap();
         self.emit_constant(Value::Number(value));
@@ -155,6 +255,20 @@ impl<'a> Compiler<'a> {
         self.emit_constant(Value::Obj(Rc::new(Obj::String(
             ObjString::new_from_string(string),
         ))));
+    }
+
+    fn variable(&mut self, can_assign: bool) {
+        self.named_variable(self.previous.source, can_assign);
+    }
+
+    fn named_variable(&mut self, name: &str, can_assign: bool) {
+        let arg = self.identifier_constant(name);
+        if self.match_token(TokenType::Equal) && can_assign {
+            self.expression();
+            self.emit_bytes(Opcode::SetGlobal as u8, arg);
+        } else {
+            self.emit_bytes(Opcode::GetGlobal as u8, arg);
+        }
     }
 
     fn grouping(&mut self) {
@@ -200,6 +314,7 @@ impl<'a> Compiler<'a> {
                 PrefixParserType::Number => self.number(),
                 PrefixParserType::Literal => self.literal(),
                 PrefixParserType::String => self.string(),
+                PrefixParserType::Variable => self.variable(precedence <= Precedence::Assignment),
             },
             None => self.error("Expect expression with prefix parser."),
         }
@@ -213,6 +328,10 @@ impl<'a> Compiler<'a> {
                 None => self.error("Expect expression with infix parser."),
             }
         }
+
+        if self.match_token(TokenType::Equal) && precedence <= Precedence::Assignment {
+            self.error("Invalid assignment target.");
+        }
     }
 
     // Code generation
@@ -222,7 +341,9 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn compile(&mut self, debug_print_code: bool) -> bool {
-        self.expression();
+        while !self.match_token(TokenType::Eof) {
+            self.declaration();
+        }
         self.consume(TokenType::Eof, "Expect end of expression.");
         self.end_compiler(debug_print_code);
         !self.had_error
@@ -282,6 +403,7 @@ impl TokenType {
             TokenType::Less => Precedence::Comparison,
             TokenType::LessEqual => Precedence::Comparison,
             TokenType::String => Precedence::None,
+            TokenType::Identifier => Precedence::None,
             _ => Precedence::None,
         }
     }
@@ -296,6 +418,7 @@ impl TokenType {
             TokenType::False => Some(PrefixParserType::Literal),
             TokenType::Bang => Some(PrefixParserType::Unary),
             TokenType::String => Some(PrefixParserType::String),
+            TokenType::Identifier => Some(PrefixParserType::Variable),
             _ => None,
         }
     }

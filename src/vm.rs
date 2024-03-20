@@ -3,6 +3,7 @@ use crate::compiler;
 use crate::debug;
 use crate::object::{Obj, ObjString};
 use crate::value::Value;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 const STACK_MAX: usize = 256;
@@ -13,6 +14,7 @@ pub struct VM {
     pub stack: [Value; STACK_MAX],
     pub stack_top: usize,
     pub heap: Vec<Rc<Obj>>,
+    pub globals: HashMap<ObjString, Value>,
 }
 
 pub enum InterpretResult {
@@ -46,6 +48,7 @@ impl VM {
             stack: [ARRAY_REPEAT_VALUE; STACK_MAX],
             stack_top: 0,
             heap: Vec::new(),
+            globals: HashMap::new(),
         }
     }
 
@@ -88,7 +91,6 @@ impl VM {
                         }
                     }
                     Opcode::Return => {
-                        println!("{}", self.pop_stack());
                         return InterpretResult::Ok;
                     }
                     Opcode::Nil => {
@@ -136,6 +138,39 @@ impl VM {
                     Opcode::Less => {
                         binary_op!(self, <, (Value::to_bool_value));
                     }
+                    Opcode::Print => {
+                        let value = self.pop_stack();
+                        println!("{value}");
+                    }
+                    Opcode::Pop => {
+                        self.pop_stack();
+                    }
+                    Opcode::DefineGlobal => {
+                        let name = self.read_string();
+                        self.globals.insert(name, self.peek(0));
+                        self.pop_stack();
+                    }
+                    Opcode::GetGlobal => {
+                        let name = self.read_string();
+                        match self.globals.get(&name) {
+                            Some(value) => self.push_stack(value.clone()),
+                            None => {
+                                self.runtime_error(format!("Undefined variable {name}.").as_str());
+                                return InterpretResult::RuntimeError;
+                            }
+                        }
+                    }
+                    Opcode::SetGlobal => {
+                        let name = self.read_string();
+                        match self.globals.insert(name.clone(), self.peek(0)) {
+                            Some(_) => {}
+                            None => {
+                                self.globals.remove(&name);
+                                self.runtime_error(format!("Undefined variable {name}.").as_str());
+                                return InterpretResult::RuntimeError;
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -150,6 +185,16 @@ impl VM {
     fn read_constant(&mut self) -> Value {
         let constant = self.read_byte() as usize;
         self.chunk.constants[constant].clone()
+    }
+
+    fn read_string(&mut self) -> ObjString {
+        let constant = self.read_constant();
+        match constant {
+            Value::Obj(obj) => match obj.as_ref() {
+                Obj::String(string) => string.clone(),
+            },
+            _ => panic!("Not a string"),
+        }
     }
 
     fn push_stack(&mut self, value: Value) {
@@ -194,14 +239,14 @@ impl VM {
         let obj1 = rc1.as_ref();
         let obj2 = rc2.as_ref();
 
-        let (Obj::String(objString1), Obj::String(objString2)) = (obj1, obj2) else {
+        let (Obj::String(obj_str1), Obj::String(obj_str2)) = (obj1, obj2) else {
             self.runtime_error("Concatenation operands must be strings.");
             return Err(InterpretResult::CompileError);
         };
 
         let new_obj = self.heap_alloc(Obj::String(ObjString::new_from_string(format!(
             "{}{}",
-            objString1, objString2
+            obj_str1, obj_str2
         ))));
         let new_value = Value::Obj(new_obj);
         self.push_stack(new_value);

@@ -19,6 +19,11 @@ pub enum Opcode {
     Equal,
     Greater,
     Less,
+    Print,
+    Pop,
+    DefineGlobal,
+    GetGlobal,
+    SetGlobal,
 }
 
 pub struct Chunk {
@@ -65,6 +70,11 @@ impl TryFrom<u8> for Opcode {
             11 => Ok(Opcode::Equal),
             12 => Ok(Opcode::Greater),
             13 => Ok(Opcode::Less),
+            14 => Ok(Opcode::Print),
+            15 => Ok(Opcode::Pop),
+            16 => Ok(Opcode::DefineGlobal),
+            17 => Ok(Opcode::GetGlobal),
+            18 => Ok(Opcode::SetGlobal),
             _ => Err(()),
         }
     }

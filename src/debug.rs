@@ -39,6 +39,11 @@ pub fn disassemble_instruction(opcode: &Opcode, chunk: &Chunk, offset: usize) ->
         Opcode::Equal => disassemble_simple_instruction(opcode, offset),
         Opcode::Greater => disassemble_simple_instruction(opcode, offset),
         Opcode::Less => disassemble_simple_instruction(opcode, offset),
+        Opcode::Print => disassemble_simple_instruction(opcode, offset),
+        Opcode::Pop => disassemble_simple_instruction(opcode, offset),
+        Opcode::DefineGlobal => disassemble_constant_instruction(opcode, chunk, offset),
+        Opcode::GetGlobal => disassemble_constant_instruction(opcode, chunk, offset),
+        Opcode::SetGlobal => disassemble_constant_instruction(opcode, chunk, offset),
     }
 }
 
