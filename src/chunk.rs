@@ -24,6 +24,8 @@ pub enum Opcode {
     DefineGlobal,
     GetGlobal,
     SetGlobal,
+    GetLocal,
+    SetLocal,
 }
 
 pub struct Chunk {
@@ -75,6 +77,8 @@ impl TryFrom<u8> for Opcode {
             16 => Ok(Opcode::DefineGlobal),
             17 => Ok(Opcode::GetGlobal),
             18 => Ok(Opcode::SetGlobal),
+            19 => Ok(Opcode::GetLocal),
+            20 => Ok(Opcode::SetLocal),
             _ => Err(()),
         }
     }

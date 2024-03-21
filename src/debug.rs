@@ -44,6 +44,8 @@ pub fn disassemble_instruction(opcode: &Opcode, chunk: &Chunk, offset: usize) ->
         Opcode::DefineGlobal => disassemble_constant_instruction(opcode, chunk, offset),
         Opcode::GetGlobal => disassemble_constant_instruction(opcode, chunk, offset),
         Opcode::SetGlobal => disassemble_constant_instruction(opcode, chunk, offset),
+        Opcode::GetLocal => disassemble_byte_instruction(opcode, chunk, offset),
+        Opcode::SetLocal => disassemble_byte_instruction(opcode, chunk, offset),
     }
 }
 
@@ -58,5 +60,11 @@ fn disassemble_constant_instruction(opcode: &Opcode, chunk: &Chunk, offset: usiz
         "{:<16} {:>4} '{}'",
         opcode, constant_offset, chunk.constants[constant_offset as usize]
     );
+    offset + 2
+}
+
+fn disassemble_byte_instruction(opcode: &Opcode, chunk: &Chunk, offset: usize) -> usize {
+    let slot = chunk.code[offset + 1];
+    println!("{:<16} {:>4}", opcode, slot);
     offset + 2
 }

@@ -63,6 +63,12 @@ pub struct Token<'a> {
     pub line: usize,
 }
 
+impl<'a> PartialEq for Token<'a> {
+    fn eq(&self, other: &Self) -> bool {
+        self.token_type == other.token_type && self.source == other.source
+    }
+}
+
 pub enum ScanError {
     UnexpectedCharacter,
     UnterminatedString,
