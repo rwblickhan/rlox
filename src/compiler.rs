@@ -294,26 +294,18 @@ impl<'a> Compiler<'a> {
 
     fn end_scope(&mut self) {
         self.compiler_state.scope_depth -= 1;
-        let mut num_locals_to_pop = 0;
-
-        for local in self.compiler_state.locals.iter().rev() {
-            let Some(local) = local else {
+        let local_count = self.compiler_state.local_count;
+        for i in (0..(local_count)).rev() {
+            let Some(local) = &self.compiler_state.locals[i] else {
                 continue;
             };
 
-            if self.compiler_state.local_count == 0
-                || local.depth <= self.compiler_state.scope_depth
+            if self.compiler_state.local_count > 0 && local.depth > self.compiler_state.scope_depth
             {
-                break;
+                self.emit_byte(Opcode::Pop as u8);
+                self.compiler_state.local_count -= 1;
             }
-
-            num_locals_to_pop += 1;
         }
-
-        for _ in 0..num_locals_to_pop {
-            self.emit_byte(Opcode::Pop as u8);
-        }
-        self.compiler_state.local_count -= num_locals_to_pop;
     }
 
     fn expression_statement(&mut self) {
@@ -407,15 +399,21 @@ impl<'a> Compiler<'a> {
     }
 
     fn resolve_local(&self, compiler_state: &CompilerState, name: Token) -> Result<i32, String> {
-        for (i, local) in compiler_state.locals.iter().enumerate() {
-            let Some(local) = local else {
+        let local_count = compiler_state.local_count;
+        for i in (0..(local_count)).rev() {
+            let Some(local) = &compiler_state.locals[i] else {
                 continue;
             };
+
             if name == local.name {
                 if local.depth == -1 {
                     return Err("Can't read local variable in its own initializer.".to_string());
                 }
-                return Ok(i as i32);
+                let i = i32::try_from(i);
+                match i {
+                    Ok(i) => return Ok(i),
+                    Err(_) => return Err("Failed to convert to integer".to_string()),
+                }
             }
         }
 
