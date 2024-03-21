@@ -1,13 +1,13 @@
-use crate::object::Obj;
-use derive_more::Display;
-use std::rc::Rc;
+use std::fmt::{Display, Error};
 
-#[derive(Display, Clone, PartialEq)]
+use crate::object::Obj;
+
+#[derive(Clone, PartialEq)]
 pub enum Value {
     Bool(bool),
     Nil,
     Number(f64),
-    Obj(Rc<Obj>),
+    Obj(*const Obj),
 }
 
 impl Value {
@@ -21,5 +21,21 @@ impl Value {
 
     pub fn is_falsey(&self) -> bool {
         matches!(self, Value::Nil | Value::Bool(false))
+    }
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Bool(bool) => bool.fmt(f),
+            Value::Nil => write!(f, "nil"),
+            Value::Number(number) => number.fmt(f),
+            &Value::Obj(obj) => unsafe {
+                let Some(obj) = obj.as_ref() else {
+                    return Err(Error);
+                };
+                obj.fmt(f)
+            },
+        }
     }
 }

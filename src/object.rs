@@ -1,16 +1,15 @@
-use derive_more::Display;
+use core::str;
 use std::fmt::Display;
 use std::hash::Hash;
+use std::ptr::null_mut;
 
-#[derive(Display, Clone, PartialEq)]
-pub(crate) enum Obj {
-    String(ObjString),
+pub(crate) struct Obj {
+    pub obj_type: ObjType,
+    pub next: *mut Obj,
 }
 
-#[derive(Clone, PartialEq, Eq)]
-pub(crate) struct ObjString {
-    string: String,
-    hash: u32,
+pub enum ObjType {
+    String(String, u32),
 }
 
 fn hash_string(str: &str) -> u32 {
@@ -22,21 +21,34 @@ fn hash_string(str: &str) -> u32 {
     hash
 }
 
-impl ObjString {
-    pub(crate) fn new_from_string(string: String) -> ObjString {
-        let hash = hash_string(&string);
-        ObjString { string, hash }
+impl Obj {
+    pub(crate) fn new_from_string(string: &str) -> Obj {
+        let hash = hash_string(string);
+        Obj {
+            obj_type: ObjType::String(string.to_owned(), hash),
+            next: null_mut(),
+        }
     }
 }
 
-impl Display for ObjString {
+impl Display for Obj {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.string)
+        self.obj_type.fmt(f)
     }
 }
 
-impl Hash for ObjString {
+impl Display for ObjType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ObjType::String(str, _) => str.fmt(f),
+        }
+    }
+}
+
+impl Hash for ObjType {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.hash.hash(state);
+        match self {
+            ObjType::String(_, hash) => hash.hash(state),
+        }
     }
 }

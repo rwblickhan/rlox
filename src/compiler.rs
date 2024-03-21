@@ -1,9 +1,9 @@
 use crate::chunk::{Chunk, Opcode};
 use crate::debug::disassemble_chunk;
-use crate::object::{Obj, ObjString};
+use crate::object::Obj;
 use crate::scanner::{Scanner, Token, TokenType};
 use crate::value::Value;
-use std::rc::Rc;
+use std::alloc::Layout;
 
 pub struct Compiler<'a> {
     compiling_chunk: &'a mut Chunk,
@@ -180,9 +180,17 @@ impl<'a> Compiler<'a> {
     }
 
     fn identifier_constant(&mut self, name: &str) -> u8 {
-        self.make_constant(Value::Obj(Rc::new(Obj::String(
-            ObjString::new_from_string(name.to_owned()),
-        ))))
+        let obj = Obj::new_from_string(name);
+        let layout = Layout::new::<Obj>();
+        unsafe {
+            // This will never be garbage collected, but that's okay, because it's a constant
+            let ptr = std::alloc::alloc(layout) as *mut Obj;
+            if ptr.is_null() {
+                std::alloc::handle_alloc_error(layout);
+            }
+            *ptr = obj;
+            self.make_constant(Value::Obj(ptr))
+        }
     }
 
     fn define_variable(&mut self, global: u8) {
@@ -250,11 +258,18 @@ impl<'a> Compiler<'a> {
 
     fn string(&mut self) {
         // Trim the leading and trailing quotes
-        let string = self.previous.source[1..self.previous.source.len() - 1].to_string();
-        // This will never be garbage collected, but that's okay, because it's a constant
-        self.emit_constant(Value::Obj(Rc::new(Obj::String(
-            ObjString::new_from_string(string),
-        ))));
+        let string = &self.previous.source[1..self.previous.source.len() - 1];
+        let obj = Obj::new_from_string(string);
+        let layout = Layout::new::<Obj>();
+        unsafe {
+            // This will never be garbage collected, but that's okay, because it's a constant
+            let ptr = std::alloc::alloc(layout) as *mut Obj;
+            if ptr.is_null() {
+                std::alloc::handle_alloc_error(layout);
+            }
+            *ptr = obj;
+            self.emit_constant(Value::Obj(ptr));
+        }
     }
 
     fn variable(&mut self, can_assign: bool) {

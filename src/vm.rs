@@ -1,10 +1,11 @@
 use crate::chunk::{Chunk, Opcode};
 use crate::compiler;
 use crate::debug;
-use crate::object::{Obj, ObjString};
+use crate::object::{Obj, ObjType};
 use crate::value::Value;
+use std::alloc::Layout;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::ptr::null_mut;
 
 const STACK_MAX: usize = 256;
 
@@ -13,8 +14,8 @@ pub struct VM {
     pub ip: usize,
     pub stack: [Value; STACK_MAX],
     pub stack_top: usize,
-    pub heap: Vec<Rc<Obj>>,
-    pub globals: HashMap<ObjString, Value>,
+    pub globals: HashMap<String, Value>,
+    objects: *mut Obj,
 }
 
 pub enum InterpretResult {
@@ -47,8 +48,8 @@ impl VM {
             ip: 0,
             stack: [ARRAY_REPEAT_VALUE; STACK_MAX],
             stack_top: 0,
-            heap: Vec::new(),
             globals: HashMap::new(),
+            objects: null_mut(),
         }
     }
 
@@ -187,11 +188,14 @@ impl VM {
         self.chunk.constants[constant].clone()
     }
 
-    fn read_string(&mut self) -> ObjString {
+    fn read_string(&mut self) -> String {
         let constant = self.read_constant();
         match constant {
-            Value::Obj(obj) => match obj.as_ref() {
-                Obj::String(string) => string.clone(),
+            Value::Obj(obj_ptr) => unsafe {
+                let obj = &*obj_ptr;
+                match &obj.obj_type {
+                    ObjType::String(str, _) => str.clone(),
+                }
             },
             _ => panic!("Not a string"),
         }
@@ -223,33 +227,67 @@ impl VM {
         self.reset_stack();
     }
 
-    fn heap_alloc(&mut self, obj: Obj) -> Rc<Obj> {
-        let rc = Rc::new(obj);
-        self.heap.push(rc.clone());
-        rc
-    }
-
     fn concatenate(&mut self) -> Result<(), InterpretResult> {
         let b = self.pop_stack();
         let a = self.pop_stack();
-        let (Value::Obj(rc1), Value::Obj(rc2)) = (a, b) else {
+        let (Value::Obj(obj1), Value::Obj(obj2)) = (a, b) else {
             self.runtime_error("Concatenation operands must be objects.");
             return Err(InterpretResult::CompileError);
         };
-        let obj1 = rc1.as_ref();
-        let obj2 = rc2.as_ref();
 
-        let (Obj::String(obj_str1), Obj::String(obj_str2)) = (obj1, obj2) else {
-            self.runtime_error("Concatenation operands must be strings.");
-            return Err(InterpretResult::CompileError);
-        };
+        unsafe {
+            let (
+                Some(Obj {
+                    obj_type: ObjType::String(str1, _),
+                    ..
+                }),
+                Some(Obj {
+                    obj_type: ObjType::String(str2, _),
+                    ..
+                }),
+            ) = (obj1.as_ref(), obj2.as_ref())
+            else {
+                self.runtime_error("Concatenation operands must be strings.");
+                return Err(InterpretResult::CompileError);
+            };
+            let new_obj =
+                self.heap_alloc(Obj::new_from_string(format!("{}{}", str1, str2).as_str()));
+            let new_value = Value::Obj(new_obj);
+            self.push_stack(new_value);
+        }
 
-        let new_obj = self.heap_alloc(Obj::String(ObjString::new_from_string(format!(
-            "{}{}",
-            obj_str1, obj_str2
-        ))));
-        let new_value = Value::Obj(new_obj);
-        self.push_stack(new_value);
         Ok(())
+    }
+
+    fn heap_alloc(&mut self, mut obj: Obj) -> *const Obj {
+        obj.next = self.objects;
+        let layout = Layout::new::<Obj>();
+        unsafe {
+            let ptr = std::alloc::alloc(layout) as *mut Obj;
+            if ptr.is_null() {
+                std::alloc::handle_alloc_error(layout);
+            }
+            *ptr = obj;
+            self.objects = ptr;
+            ptr
+        }
+    }
+
+    fn free_objects(&mut self) {
+        let mut obj_ptr = self.objects;
+        unsafe {
+            while let Some(obj) = obj_ptr.as_ref() {
+                let next = obj.next;
+                std::ptr::drop_in_place(obj_ptr);
+                std::alloc::dealloc(obj_ptr as *mut u8, Layout::new::<Obj>());
+                obj_ptr = next;
+            }
+        }
+    }
+}
+
+impl Drop for VM {
+    fn drop(&mut self) {
+        self.free_objects();
     }
 }
