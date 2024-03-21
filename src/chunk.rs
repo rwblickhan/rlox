@@ -26,6 +26,9 @@ pub enum Opcode {
     SetGlobal,
     GetLocal,
     SetLocal,
+    JumpIfFalse,
+    Jump,
+    Loop,
 }
 
 pub struct Chunk {
@@ -79,6 +82,9 @@ impl TryFrom<u8> for Opcode {
             18 => Ok(Opcode::SetGlobal),
             19 => Ok(Opcode::GetLocal),
             20 => Ok(Opcode::SetLocal),
+            21 => Ok(Opcode::JumpIfFalse),
+            22 => Ok(Opcode::Jump),
+            23 => Ok(Opcode::Loop),
             _ => Err(()),
         }
     }

@@ -4,6 +4,7 @@ use crate::object::Obj;
 use crate::scanner::{Scanner, Token, TokenType};
 use crate::value::Value;
 use std::alloc::Layout;
+use std::process::exit;
 
 const MAX_LOCALS: usize = 256;
 
@@ -39,6 +40,8 @@ enum PrefixParserType {
 
 enum InfixParserType {
     Binary,
+    And,
+    Or,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -265,6 +268,12 @@ impl<'a> Compiler<'a> {
     fn statement(&mut self) {
         if self.match_token(TokenType::Print) {
             self.print_statement();
+        } else if self.match_token(TokenType::For) {
+            self.for_statement();
+        } else if self.match_token(TokenType::If) {
+            self.if_statement();
+        } else if self.match_token(TokenType::While) {
+            self.while_statement();
         } else if self.match_token(TokenType::LeftBrace) {
             self.begin_scope();
             self.block();
@@ -278,6 +287,115 @@ impl<'a> Compiler<'a> {
         self.expression();
         self.consume(TokenType::Semicolon, "Expect ';' after print expression.");
         self.emit_byte(Opcode::Print as u8);
+    }
+
+    fn for_statement(&mut self) {
+        self.begin_scope();
+        self.consume(TokenType::LeftParen, "Expect '(' after 'for'.");
+        if self.match_token(TokenType::Semicolon) {
+            // No initializer!
+        } else if self.match_token(TokenType::Var) {
+            self.var_declaration();
+        } else {
+            self.expression_statement();
+        }
+
+        let mut loop_start = self.current_chunk().code.len();
+        let mut exit_jump = None;
+        if !self.match_token(TokenType::Semicolon) {
+            self.expression();
+            self.consume(TokenType::Semicolon, "Expect ';' after loop condition.");
+            exit_jump = Some(self.emit_jump(Opcode::JumpIfFalse));
+            self.emit_byte(Opcode::Pop as u8);
+        }
+
+        if !self.match_token(TokenType::RightParen) {
+            let body_jump = self.emit_jump(Opcode::Jump);
+            let increment_start = self.current_chunk().code.len();
+            self.expression();
+            self.emit_byte(Opcode::Pop as u8);
+            self.consume(TokenType::RightParen, "Expect ')' after for clauses.");
+
+            self.emit_loop(loop_start);
+            loop_start = increment_start;
+            self.patch_jump(body_jump);
+        }
+
+        self.statement();
+        self.emit_loop(loop_start);
+
+        if let Some(exit_jump) = exit_jump {
+            self.patch_jump(exit_jump);
+            self.emit_byte(Opcode::Pop as u8);
+        }
+
+        self.end_scope();
+    }
+
+    fn if_statement(&mut self) {
+        self.consume(TokenType::LeftParen, "Expect '(' after 'if'.");
+        self.expression();
+        self.consume(TokenType::RightParen, "Expect ')' after condition.");
+
+        let then_jump = self.emit_jump(Opcode::JumpIfFalse);
+        self.emit_byte(Opcode::Pop as u8);
+        self.statement();
+        let else_jump = self.emit_jump(Opcode::Jump);
+        self.patch_jump(then_jump);
+        self.emit_byte(Opcode::Pop as u8);
+        if self.match_token(TokenType::Else) {
+            self.statement();
+        }
+        self.patch_jump(else_jump);
+    }
+
+    fn while_statement(&mut self) {
+        let loop_start = self.current_chunk().code.len();
+        self.consume(TokenType::LeftParen, "Expect '(' after 'while'.");
+        self.expression();
+        self.consume(TokenType::RightParen, "Expect ')' after condition.");
+
+        let exit_jump = self.emit_jump(Opcode::JumpIfFalse);
+        self.emit_byte(Opcode::Pop as u8);
+        self.statement();
+        self.emit_loop(loop_start);
+
+        self.patch_jump(exit_jump);
+        self.emit_byte(Opcode::Pop as u8);
+    }
+
+    fn emit_loop(&mut self, loop_start: usize) {
+        self.emit_byte(Opcode::Loop as u8);
+        let offset = self.current_chunk().code.len() - loop_start + 2;
+        if offset > u16::MAX as usize {
+            self.error("Loop body too large.");
+        }
+
+        self.emit_byte((offset as u16 >> 8 & 0xff) as u8);
+        self.emit_byte((offset & 0xff) as u8)
+    }
+
+    fn emit_jump(&mut self, opcode: Opcode) -> usize {
+        self.emit_byte(opcode as u8);
+        self.emit_byte(0xff);
+        self.emit_byte(0xff);
+        self.current_chunk().code.len() - 2
+    }
+
+    fn patch_jump(&mut self, offset: usize) {
+        // -2 to adjust for the bytecode for the jump offset itself
+        let jump = self.current_chunk().code.len() - offset - 2;
+
+        let jump: u16 = match jump.try_into() {
+            Ok(jump) => jump,
+            Err(_) => {
+                self.error("Too much code to jump over.");
+                0
+            }
+        };
+
+        self.current_chunk().code[offset] = (jump >> 8) as u8;
+        self.current_chunk().code[offset + 1] = jump as u8;
     }
 
     fn begin_scope(&mut self) {
@@ -453,6 +571,24 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn and(&mut self) {
+        let jump = self.emit_jump(Opcode::JumpIfFalse);
+        self.emit_byte(Opcode::Pop as u8);
+        self.parse_precedence(Precedence::And);
+        self.patch_jump(jump);
+    }
+
+    fn or(&mut self) {
+        let else_jump = self.emit_jump(Opcode::JumpIfFalse);
+        let end_jump = self.emit_jump(Opcode::Jump);
+
+        self.patch_jump(else_jump);
+        self.emit_byte(Opcode::Pop as u8);
+
+        self.parse_precedence(Precedence::Or);
+        self.patch_jump(end_jump);
+    }
+
     fn parse_precedence(&mut self, precedence: Precedence) {
         self.advance();
 
@@ -473,6 +609,8 @@ impl<'a> Compiler<'a> {
             match self.previous.token_type.infix_parser_type() {
                 Some(infix_parser_type) => match infix_parser_type {
                     InfixParserType::Binary => self.binary(),
+                    InfixParserType::And => self.and(),
+                    InfixParserType::Or => self.or(),
                 },
                 None => self.error("Expect expression with infix parser."),
             }
@@ -553,6 +691,8 @@ impl TokenType {
             TokenType::LessEqual => Precedence::Comparison,
             TokenType::String => Precedence::None,
             TokenType::Identifier => Precedence::None,
+            TokenType::And => Precedence::And,
+            TokenType::Or => Precedence::Or,
             _ => Precedence::None,
         }
     }
@@ -584,6 +724,8 @@ impl TokenType {
             TokenType::GreaterEqual => Some(InfixParserType::Binary),
             TokenType::Less => Some(InfixParserType::Binary),
             TokenType::LessEqual => Some(InfixParserType::Binary),
+            TokenType::And => Some(InfixParserType::And),
+            TokenType::Or => Some(InfixParserType::Or),
             _ => None,
         }
     }

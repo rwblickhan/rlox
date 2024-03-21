@@ -180,6 +180,20 @@ impl VM {
                         let slot = self.read_byte() as usize;
                         self.stack[slot] = self.peek(0);
                     }
+                    Opcode::JumpIfFalse => {
+                        let offset = self.read_short();
+                        if self.peek(0).is_falsey() {
+                            self.ip += offset as usize;
+                        }
+                    }
+                    Opcode::Jump => {
+                        let offset = self.read_short();
+                        self.ip += offset as usize;
+                    }
+                    Opcode::Loop => {
+                        let offset = self.read_short();
+                        self.ip -= offset as usize;
+                    }
                 }
             }
         }
@@ -189,6 +203,10 @@ impl VM {
         let byte = self.chunk.code[self.ip];
         self.ip += 1;
         byte
+    }
+
+    fn read_short(&mut self) -> u16 {
+        (self.read_byte() as u16) << 8 | self.read_byte() as u16
     }
 
     fn read_constant(&mut self) -> Value {

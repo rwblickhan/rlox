@@ -46,6 +46,9 @@ pub fn disassemble_instruction(opcode: &Opcode, chunk: &Chunk, offset: usize) ->
         Opcode::SetGlobal => disassemble_constant_instruction(opcode, chunk, offset),
         Opcode::GetLocal => disassemble_byte_instruction(opcode, chunk, offset),
         Opcode::SetLocal => disassemble_byte_instruction(opcode, chunk, offset),
+        Opcode::JumpIfFalse => disassemble_jump_instruction(opcode, chunk, offset, true),
+        Opcode::Jump => disassemble_jump_instruction(opcode, chunk, offset, true),
+        Opcode::Loop => disassemble_jump_instruction(opcode, chunk, offset, false),
     }
 }
 
@@ -67,4 +70,20 @@ fn disassemble_byte_instruction(opcode: &Opcode, chunk: &Chunk, offset: usize) -
     let slot = chunk.code[offset + 1];
     println!("{:<16} {:>4}", opcode, slot);
     offset + 2
+}
+
+fn disassemble_jump_instruction(
+    opcode: &Opcode,
+    chunk: &Chunk,
+    offset: usize,
+    forward: bool,
+) -> usize {
+    let jump = ((chunk.code[offset + 1] as u16) << 8 | chunk.code[offset + 2] as u16) as usize;
+    let target = if forward {
+        offset + 3 + jump
+    } else {
+        offset + 3 - jump
+    };
+    println!("{:<16} {:>4} -> {}", opcode, offset, target);
+    offset + 3
 }
