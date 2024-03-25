@@ -1,7 +1,9 @@
 mod chunk;
 mod compiler;
 mod debug;
-mod object;
+mod memory;
+mod object_function;
+mod object_string;
 mod scanner;
 mod value;
 mod vm;
@@ -13,7 +15,8 @@ use vm::{InterpretResult, VM};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let mut vm = VM::new();
+    let mut garbage_collector = memory::GarbageCollector::new();
+    let mut vm = VM::new(&mut garbage_collector);
     if args.len() == 1 {
         repl(&mut vm);
     } else if args.len() == 2 {

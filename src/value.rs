@@ -1,13 +1,14 @@
-use std::fmt::{Display, Error};
-
-use crate::object::Obj;
+use crate::object_function::ObjFunction;
+use crate::object_string::ObjString;
+use std::fmt::Display;
 
 #[derive(Clone, PartialEq)]
 pub enum Value {
     Bool(bool),
     Nil,
     Number(f64),
-    Obj(*const Obj),
+    ObjString(*const ObjString),
+    ObjFunction(*const ObjFunction),
 }
 
 impl Value {
@@ -30,12 +31,8 @@ impl Display for Value {
             Value::Bool(bool) => bool.fmt(f),
             Value::Nil => write!(f, "nil"),
             Value::Number(number) => number.fmt(f),
-            &Value::Obj(obj) => unsafe {
-                let Some(obj) = obj.as_ref() else {
-                    return Err(Error);
-                };
-                obj.fmt(f)
-            },
+            Value::ObjString(obj_str) => unsafe { (**obj_str).fmt(f) },
+            Value::ObjFunction(obj_func) => unsafe { (**obj_func).fmt(f) },
         }
     }
 }

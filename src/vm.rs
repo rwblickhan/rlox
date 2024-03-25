@@ -1,21 +1,53 @@
-use crate::chunk::{Chunk, Opcode};
+use crate::chunk::Opcode;
 use crate::compiler;
 use crate::debug;
-use crate::object::{Obj, ObjType};
+use crate::memory::GarbageCollector;
+use crate::object_function::ObjFunction;
+use crate::object_string::ObjString;
 use crate::value::Value;
-use std::alloc::Layout;
 use std::collections::HashMap;
-use std::ptr::null_mut;
 
-const STACK_MAX: usize = 256;
+const FRAMES_MAX: usize = 64;
+const STACK_MAX: usize = FRAMES_MAX * 8;
 
-pub struct VM {
-    pub chunk: Chunk,
-    pub ip: usize,
+pub struct VM<'a> {
     pub stack: [Value; STACK_MAX],
     pub stack_top: usize,
     pub globals: HashMap<String, Value>,
-    objects: *mut Obj,
+    pub garbage_collector: &'a mut GarbageCollector,
+    pub frames: [Option<CallFrame>; FRAMES_MAX],
+    pub frames_top: usize,
+}
+
+pub struct CallFrame {
+    pub function: *const ObjFunction,
+    pub ip: usize,
+    pub first_slot: usize,
+}
+
+impl CallFrame {
+    pub fn read_byte(&mut self) -> u8 {
+        let byte = unsafe { (*self.function).chunk.code[self.ip] };
+        self.ip += 1;
+        byte
+    }
+
+    pub fn read_short(&mut self) -> u16 {
+        (self.read_byte() as u16) << 8 | self.read_byte() as u16
+    }
+
+    pub fn read_constant(&mut self) -> Value {
+        let constant = self.read_byte() as usize;
+        unsafe { (*self.function).chunk.constants[constant].clone() }
+    }
+
+    fn read_string(&mut self) -> &str {
+        let constant = self.read_constant();
+        match constant {
+            Value::ObjString(obj_str) => unsafe { &(*obj_str).str },
+            _ => panic!("Not a string"),
+        }
+    }
 }
 
 pub enum InterpretResult {
@@ -40,26 +72,35 @@ macro_rules! binary_op {
     };
 }
 
-impl VM {
-    pub fn new() -> VM {
-        const ARRAY_REPEAT_VALUE: Value = Value::Number(0.0);
+impl<'a> VM<'a> {
+    pub fn new(garbage_collector: &mut GarbageCollector) -> VM {
+        const VALUE_ARRAY_REPEAT_VALUE: Value = Value::Number(0.0);
+        const FRAME_ARRAY_REPEAT_VALUE: Option<CallFrame> = None;
         VM {
-            chunk: Chunk::new(),
-            ip: 0,
-            stack: [ARRAY_REPEAT_VALUE; STACK_MAX],
+            stack: [VALUE_ARRAY_REPEAT_VALUE; STACK_MAX],
             stack_top: 0,
             globals: HashMap::new(),
-            objects: null_mut(),
+            garbage_collector,
+            frames: [FRAME_ARRAY_REPEAT_VALUE; FRAMES_MAX],
+            frames_top: 0,
         }
     }
 
     pub fn interpret(&mut self, source: String) -> InterpretResult {
-        let mut compiler = compiler::Compiler::new(source.as_str(), &mut self.chunk);
-        if !compiler.compile(true) {
-            return InterpretResult::CompileError;
-        }
+        let mut compiler = compiler::Compiler::new(source.as_str(), self.garbage_collector);
+        match compiler.compile(true) {
+            Some(function) => {
+                self.push_stack(Value::ObjFunction(function));
+                self.frames[self.frames_top] = Some(CallFrame {
+                    function,
+                    ip: 0,
+                    first_slot: self.stack_top,
+                })
+            }
+            None => return InterpretResult::CompileError,
+        };
 
-        self.run(true)
+        self.run(false)
     }
 
     pub fn run(&mut self, debug_trace_execution: bool) -> InterpretResult {
@@ -72,7 +113,13 @@ impl VM {
                         print!("[ {slot} ]");
                     }
                     println!();
-                    debug::disassemble_instruction(&instruction, &self.chunk, self.ip - 1);
+                    debug::disassemble_instruction(
+                        &instruction,
+                        unsafe {
+                            &(*(self.frames[self.frames_top].as_mut().unwrap().function)).chunk
+                        },
+                        self.current_ip() - 1,
+                    );
                 }
                 match instruction {
                     Opcode::Constant => {
@@ -104,7 +151,9 @@ impl VM {
                         self.push_stack(Value::Bool(false));
                     }
                     Opcode::Add => {
-                        if let (Value::Obj(_), Value::Obj(_)) = (self.peek(0), self.peek(1)) {
+                        if let (Value::ObjString(_), Value::ObjString(_)) =
+                            (self.peek(0), self.peek(1))
+                        {
                             match self.concatenate() {
                                 Ok(_) => {}
                                 Err(err) => return err,
@@ -147,12 +196,12 @@ impl VM {
                         self.pop_stack();
                     }
                     Opcode::DefineGlobal => {
-                        let name = self.read_string();
+                        let name = self.read_string().to_owned();
                         self.globals.insert(name, self.peek(0));
                         self.pop_stack();
                     }
                     Opcode::GetGlobal => {
-                        let name = self.read_string();
+                        let name = self.read_string().to_owned();
                         match self.globals.get(&name) {
                             Some(value) => self.push_stack(value.clone()),
                             None => {
@@ -162,37 +211,41 @@ impl VM {
                         }
                     }
                     Opcode::SetGlobal => {
-                        let name = self.read_string();
+                        let name = self.read_string().to_owned();
                         match self.globals.insert(name.clone(), self.peek(0)) {
                             Some(_) => {}
                             None => {
                                 self.globals.remove(&name);
-                                self.runtime_error(format!("Undefined variable {name}.").as_str());
+                                self.runtime_error(
+                                    format!("Undefined variable {}.", name.clone()).as_str(),
+                                );
                                 return InterpretResult::RuntimeError;
                             }
                         }
                     }
                     Opcode::GetLocal => {
-                        let slot = self.read_byte() as usize;
+                        let slot = self.read_slot();
                         self.push_stack(self.stack[slot].clone());
                     }
                     Opcode::SetLocal => {
-                        let slot = self.read_byte() as usize;
+                        let slot = self.read_slot();
+                        self.push_stack(self.stack[slot].clone());
                         self.stack[slot] = self.peek(0);
                     }
                     Opcode::JumpIfFalse => {
                         let offset = self.read_short();
-                        if self.peek(0).is_falsey() {
-                            self.ip += offset as usize;
+                        let is_falsey = self.peek(0).is_falsey();
+                        if is_falsey {
+                            self.inc_ip(offset as usize);
                         }
                     }
                     Opcode::Jump => {
                         let offset = self.read_short();
-                        self.ip += offset as usize;
+                        self.inc_ip(offset as usize);
                     }
                     Opcode::Loop => {
                         let offset = self.read_short();
-                        self.ip -= offset as usize;
+                        self.dec_ip(offset as usize);
                     }
                 }
             }
@@ -200,31 +253,39 @@ impl VM {
     }
 
     fn read_byte(&mut self) -> u8 {
-        let byte = self.chunk.code[self.ip];
-        self.ip += 1;
-        byte
+        self.frames[self.frames_top].as_mut().unwrap().read_byte()
     }
 
     fn read_short(&mut self) -> u16 {
-        (self.read_byte() as u16) << 8 | self.read_byte() as u16
+        self.frames[self.frames_top].as_mut().unwrap().read_short()
     }
 
     fn read_constant(&mut self) -> Value {
-        let constant = self.read_byte() as usize;
-        self.chunk.constants[constant].clone()
+        self.frames[self.frames_top]
+            .as_mut()
+            .unwrap()
+            .read_constant()
     }
 
-    fn read_string(&mut self) -> String {
-        let constant = self.read_constant();
-        match constant {
-            Value::Obj(obj_ptr) => unsafe {
-                let obj = &*obj_ptr;
-                match &obj.obj_type {
-                    ObjType::String(str, _) => str.clone(),
-                }
-            },
-            _ => panic!("Not a string"),
-        }
+    fn read_string(&mut self) -> &str {
+        self.frames[self.frames_top].as_mut().unwrap().read_string()
+    }
+
+    fn read_slot(&mut self) -> usize {
+        let slot = self.read_byte() as usize;
+        self.frames[self.frames_top].as_mut().unwrap().first_slot + slot
+    }
+
+    fn current_ip(&self) -> usize {
+        self.frames[self.frames_top].as_ref().unwrap().ip
+    }
+
+    fn inc_ip(&mut self, offset: usize) {
+        self.frames[self.frames_top].as_mut().unwrap().ip += offset
+    }
+
+    fn dec_ip(&mut self, offset: usize) {
+        self.frames[self.frames_top].as_mut().unwrap().ip -= offset
     }
 
     fn push_stack(&mut self, value: Value) {
@@ -247,8 +308,12 @@ impl VM {
 
     fn runtime_error(&mut self, message: &str) {
         eprintln!("{message}");
-        let instruction = self.ip - 1;
-        let line = self.chunk.lines[instruction];
+        let instruction = self.current_ip() - 1;
+        let line = unsafe {
+            (*self.frames[self.frames_top].as_mut().unwrap().function)
+                .chunk
+                .lines[instruction]
+        };
         eprintln!("[line {line}] in script");
         self.reset_stack();
     }
@@ -256,64 +321,21 @@ impl VM {
     fn concatenate(&mut self) -> Result<(), InterpretResult> {
         let b = self.pop_stack();
         let a = self.pop_stack();
-        let (Value::Obj(obj1), Value::Obj(obj2)) = (a, b) else {
-            self.runtime_error("Concatenation operands must be objects.");
+        let (Value::ObjString(obj_str1), Value::ObjString(obj_str2)) = (a, b) else {
+            self.runtime_error("Concatenation operands must be strings.");
             return Err(InterpretResult::CompileError);
         };
 
         unsafe {
-            let (
-                Some(Obj {
-                    obj_type: ObjType::String(str1, _),
-                    ..
-                }),
-                Some(Obj {
-                    obj_type: ObjType::String(str2, _),
-                    ..
-                }),
-            ) = (obj1.as_ref(), obj2.as_ref())
-            else {
-                self.runtime_error("Concatenation operands must be strings.");
-                return Err(InterpretResult::CompileError);
-            };
-            let new_obj =
-                self.heap_alloc(Obj::new_from_string(format!("{}{}", str1, str2).as_str()));
-            let new_value = Value::Obj(new_obj);
+            let str1 = &(*obj_str1).str;
+            let str2 = &(*obj_str2).str;
+            let new_obj = self
+                .garbage_collector
+                .heap_alloc(ObjString::new(format!("{}{}", str1, str2).as_str()));
+            let new_value = Value::ObjString(new_obj);
             self.push_stack(new_value);
         }
 
         Ok(())
-    }
-
-    fn heap_alloc(&mut self, mut obj: Obj) -> *const Obj {
-        obj.next = self.objects;
-        let layout = Layout::new::<Obj>();
-        unsafe {
-            let ptr = std::alloc::alloc(layout) as *mut Obj;
-            if ptr.is_null() {
-                std::alloc::handle_alloc_error(layout);
-            }
-            *ptr = obj;
-            self.objects = ptr;
-            ptr
-        }
-    }
-
-    fn free_objects(&mut self) {
-        let mut obj_ptr = self.objects;
-        unsafe {
-            while let Some(obj) = obj_ptr.as_ref() {
-                let next = obj.next;
-                std::ptr::drop_in_place(obj_ptr);
-                std::alloc::dealloc(obj_ptr as *mut u8, Layout::new::<Obj>());
-                obj_ptr = next;
-            }
-        }
-    }
-}
-
-impl Drop for VM {
-    fn drop(&mut self) {
-        self.free_objects();
     }
 }

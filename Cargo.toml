@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 derive_more = "0.99.17"
+tinyvec = "1.6.0"
