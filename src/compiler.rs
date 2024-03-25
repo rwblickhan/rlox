@@ -1,10 +1,10 @@
 use crate::chunk::{Chunk, Opcode};
 use crate::debug::disassemble_chunk;
-use crate::object::Obj;
+use crate::memory::GarbageCollector;
+use crate::object_string::ObjString;
 use crate::scanner::{Scanner, Token, TokenType};
 use crate::value::Value;
 use std::alloc::Layout;
-use std::process::exit;
 
 const MAX_LOCALS: usize = 256;
 
@@ -16,6 +16,7 @@ pub struct Compiler<'a> {
     had_error: bool,
     panic_mode: bool,
     compiler_state: CompilerState<'a>,
+    garbage_collector: &'a mut GarbageCollector,
 }
 
 pub struct CompilerState<'a> {
@@ -79,7 +80,11 @@ impl Precedence {
 }
 
 impl<'a> Compiler<'a> {
-    pub fn new(source: &'a str, compiling_chunk: &'a mut Chunk) -> Compiler<'a> {
+    pub fn new(
+        source: &'a str,
+        compiling_chunk: &'a mut Chunk,
+        garbage_collector: &'a mut GarbageCollector,
+    ) -> Compiler<'a> {
         let mut scanner = Scanner::new(source);
         let starting_token = Compiler::advance_to_start(&mut scanner);
         const LOCAL_REPEAT_VALUE: Option<Local> = None;
@@ -90,6 +95,7 @@ impl<'a> Compiler<'a> {
             scanner,
             had_error: false,
             panic_mode: false,
+            garbage_collector,
             compiler_state: CompilerState {
                 locals: [LOCAL_REPEAT_VALUE; MAX_LOCALS],
                 local_count: 0,
@@ -238,17 +244,8 @@ impl<'a> Compiler<'a> {
     }
 
     fn identifier_constant(&mut self, name: &str) -> u8 {
-        let obj = Obj::new_from_string(name);
-        let layout = Layout::new::<Obj>();
-        unsafe {
-            // This will never be garbage collected, but that's okay, because it's a constant
-            let ptr = std::alloc::alloc(layout) as *mut Obj;
-            if ptr.is_null() {
-                std::alloc::handle_alloc_error(layout);
-            }
-            *ptr = obj;
-            self.make_constant(Value::Obj(ptr))
-        }
+        let obj_str = self.garbage_collector.heap_alloc(ObjString::new(name));
+        self.make_constant(Value::ObjString(obj_str))
     }
 
     fn define_variable(&mut self, global: u8) {
@@ -474,16 +471,16 @@ impl<'a> Compiler<'a> {
     fn string(&mut self) {
         // Trim the leading and trailing quotes
         let string = &self.previous.source[1..self.previous.source.len() - 1];
-        let obj = Obj::new_from_string(string);
-        let layout = Layout::new::<Obj>();
+        let obj = ObjString::new(string);
+        let layout = Layout::new::<ObjString>();
         unsafe {
             // This will never be garbage collected, but that's okay, because it's a constant
-            let ptr = std::alloc::alloc(layout) as *mut Obj;
+            let ptr = std::alloc::alloc(layout) as *mut ObjString;
             if ptr.is_null() {
                 std::alloc::handle_alloc_error(layout);
             }
             *ptr = obj;
-            self.emit_constant(Value::Obj(ptr));
+            self.emit_constant(Value::ObjString(ptr));
         }
     }
 
