@@ -1,5 +1,5 @@
-fun noReturn() {
-    print "Do stuff";
+fun noReturn(a, b) {
+    print a + b;
 }
 
-print noReturn();
+noReturn(1, 2);

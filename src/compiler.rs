@@ -28,8 +28,14 @@ pub struct CompilerState<'a> {
 
 impl CompilerState<'_> {
     pub fn new(function: *mut ObjFunction) -> CompilerState<'static> {
+        let mut locals = ArrayVec::new();
+        let name_local = Local {
+            name: None,
+            depth: 0,
+        };
+        locals.push(name_local);
         CompilerState {
-            locals: ArrayVec::new(),
+            locals,
             scope_depth: 0,
             function,
         }
@@ -101,12 +107,6 @@ impl<'a> Compiler<'a> {
         let mut scanner = Scanner::new(source);
         let starting_token = Compiler::advance_to_start(&mut scanner);
         let function = garbage_collector.heap_alloc(ObjFunction::new(FunctionType::Script, None));
-        let mut initial_compiler_state = CompilerState::new(function);
-        initial_compiler_state.locals.push(Local {
-            name: None,
-            depth: 0,
-        });
-        let compiler_states = vec![initial_compiler_state];
         Compiler {
             current: starting_token,
             previous: starting_token,
@@ -114,7 +114,7 @@ impl<'a> Compiler<'a> {
             had_error: false,
             panic_mode: false,
             garbage_collector,
-            compiler_states,
+            compiler_states: vec![CompilerState::new(function)],
         }
     }
 

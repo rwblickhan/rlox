@@ -104,7 +104,7 @@ impl<'a> VM<'a> {
             None => return InterpretResult::CompileError,
         };
 
-        self.run(false)
+        self.run(true)
     }
 
     pub fn run(&mut self, debug_trace_execution: bool) -> InterpretResult {
