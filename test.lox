@@ -1,5 +1,8 @@
-fun noReturn(a, b) {
-    print a + b;
+fun fib(n) {
+  if (n < 2) return n;
+  return fib(n - 2) + fib(n - 1);
 }
 
-noReturn(1, 2);
+var start = clock();
+print fib(20);
+print clock() - start;

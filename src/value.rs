@@ -1,4 +1,5 @@
 use crate::object_function::ObjFunction;
+use crate::object_native::ObjNative;
 use crate::object_string::ObjString;
 use std::fmt::Display;
 
@@ -9,6 +10,7 @@ pub enum Value {
     Number(f64),
     ObjString(*const ObjString),
     ObjFunction(*const ObjFunction),
+    ObjNative(*const ObjNative),
 }
 
 impl Value {
@@ -33,6 +35,7 @@ impl Display for Value {
             Value::Number(number) => number.fmt(f),
             Value::ObjString(obj_str) => unsafe { (**obj_str).fmt(f) },
             Value::ObjFunction(obj_func) => unsafe { (**obj_func).fmt(f) },
+            Value::ObjNative(obj_native) => unsafe { (**obj_native).fmt(f) },
         }
     }
 }

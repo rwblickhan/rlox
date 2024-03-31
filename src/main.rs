@@ -3,6 +3,7 @@ mod compiler;
 mod debug;
 mod memory;
 mod object_function;
+mod object_native;
 mod object_string;
 mod scanner;
 mod value;

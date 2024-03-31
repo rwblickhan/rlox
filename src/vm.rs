@@ -3,6 +3,8 @@ use crate::compiler;
 use crate::debug;
 use crate::memory::GarbageCollector;
 use crate::object_function::ObjFunction;
+use crate::object_native::NativeFunction;
+use crate::object_native::ObjNative;
 use crate::object_string::ObjString;
 use crate::value::Value;
 use std::collections::HashMap;
@@ -95,8 +97,9 @@ impl<'a> VM<'a> {
     }
 
     pub fn interpret(&mut self, source: String) -> InterpretResult {
+        self.define_native("clock", NativeFunction::Clock);
         let mut compiler = compiler::Compiler::new(source.as_str(), self.garbage_collector);
-        match compiler.compile(true) {
+        match compiler.compile(false) {
             Some(function) => {
                 self.push_stack(Value::ObjFunction(function));
                 self.call(function, 0);
@@ -104,7 +107,7 @@ impl<'a> VM<'a> {
             None => return InterpretResult::CompileError,
         };
 
-        self.run(true)
+        self.run(false)
     }
 
     pub fn run(&mut self, debug_trace_execution: bool) -> InterpretResult {
@@ -329,6 +332,23 @@ impl<'a> VM<'a> {
         self.reset_stack();
     }
 
+    fn define_native(&mut self, name: &str, function: NativeFunction) {
+        let name = self.garbage_collector.heap_alloc(ObjString::new(name));
+        self.push_stack(Value::ObjString(name));
+        let native = self.garbage_collector.heap_alloc(ObjNative::new(function));
+        self.push_stack(Value::ObjNative(native));
+
+        match self.stack[0] {
+            Value::ObjString(str) => self
+                .globals
+                .insert(unsafe { (*str).str.clone() }, self.stack[1].clone()),
+            _ => panic!("This shouldn't be possible..."),
+        };
+
+        self.pop_stack();
+        self.pop_stack();
+    }
+
     fn concatenate(&mut self) -> Result<(), InterpretResult> {
         let b = self.pop_stack();
         let a = self.pop_stack();
@@ -353,6 +373,10 @@ impl<'a> VM<'a> {
     fn call_value(&mut self, callee: Value, arg_count: usize) -> bool {
         match callee {
             Value::ObjFunction(obj_fun) => self.call(obj_fun, arg_count),
+            Value::ObjNative(obj_native) => {
+                self.call_native(obj_native, arg_count);
+                true
+            }
             _ => {
                 self.runtime_error("Can only call functions and classes.");
                 false
@@ -377,5 +401,22 @@ impl<'a> VM<'a> {
             ip: 0,
         });
         true
+    }
+
+    fn call_native(&mut self, native: *const ObjNative, arg_count: usize) {
+        let native = unsafe { &(*native) };
+
+        let result = match native.native_function {
+            crate::object_native::NativeFunction::Clock => {
+                let time = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis();
+                Value::Number(time as f64)
+            }
+        };
+
+        self.stack_top -= arg_count + 1;
+        self.push_stack(result);
     }
 }
