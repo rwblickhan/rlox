@@ -1,5 +1,8 @@
-fun areWeHavingItYet() {
-    print "Yes we are!";
+fun a() { b(); }
+fun b() { c(); }
+fun c() {
+  c("too", "many");
 }
 
-print areWeHavingItYet;
+a();
+

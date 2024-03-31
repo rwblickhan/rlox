@@ -6,6 +6,7 @@ use crate::object_function::ObjFunction;
 use crate::object_string::ObjString;
 use crate::value::Value;
 use std::collections::HashMap;
+use tinyvec::ArrayVec;
 
 const FRAMES_MAX: usize = 64;
 const STACK_MAX: usize = FRAMES_MAX * 8;
@@ -15,14 +16,23 @@ pub struct VM<'a> {
     pub stack_top: usize,
     pub globals: HashMap<String, Value>,
     pub garbage_collector: &'a mut GarbageCollector,
-    pub frames: [Option<CallFrame>; FRAMES_MAX],
-    pub frames_top: usize,
+    pub frames: ArrayVec<[CallFrame; FRAMES_MAX]>,
 }
 
 pub struct CallFrame {
     pub function: *const ObjFunction,
     pub ip: usize,
     pub first_slot: usize,
+}
+
+impl Default for CallFrame {
+    fn default() -> Self {
+        CallFrame {
+            function: std::ptr::null(),
+            ip: 0,
+            first_slot: 0,
+        }
+    }
 }
 
 impl CallFrame {
@@ -75,14 +85,12 @@ macro_rules! binary_op {
 impl<'a> VM<'a> {
     pub fn new(garbage_collector: &mut GarbageCollector) -> VM {
         const VALUE_ARRAY_REPEAT_VALUE: Value = Value::Number(0.0);
-        const FRAME_ARRAY_REPEAT_VALUE: Option<CallFrame> = None;
         VM {
             stack: [VALUE_ARRAY_REPEAT_VALUE; STACK_MAX],
             stack_top: 0,
             globals: HashMap::new(),
             garbage_collector,
-            frames: [FRAME_ARRAY_REPEAT_VALUE; FRAMES_MAX],
-            frames_top: 0,
+            frames: ArrayVec::new(),
         }
     }
 
@@ -91,11 +99,7 @@ impl<'a> VM<'a> {
         match compiler.compile(true) {
             Some(function) => {
                 self.push_stack(Value::ObjFunction(function));
-                self.frames[self.frames_top] = Some(CallFrame {
-                    function,
-                    ip: 0,
-                    first_slot: self.stack_top,
-                })
+                self.call(function, 0);
             }
             None => return InterpretResult::CompileError,
         };
@@ -115,9 +119,7 @@ impl<'a> VM<'a> {
                     println!();
                     debug::disassemble_instruction(
                         &instruction,
-                        unsafe {
-                            &(*(self.frames[self.frames_top].as_mut().unwrap().function)).chunk
-                        },
+                        unsafe { &(*(self.frames.last_mut().unwrap().function)).chunk },
                         self.current_ip() - 1,
                     );
                 }
@@ -247,45 +249,48 @@ impl<'a> VM<'a> {
                         let offset = self.read_short();
                         self.dec_ip(offset as usize);
                     }
+                    Opcode::Call => {
+                        let arg_count = self.read_byte() as usize;
+                        if !self.call_value(self.peek(arg_count), arg_count) {
+                            return InterpretResult::RuntimeError;
+                        }
+                    }
                 }
             }
         }
     }
 
     fn read_byte(&mut self) -> u8 {
-        self.frames[self.frames_top].as_mut().unwrap().read_byte()
+        self.frames.last_mut().unwrap().read_byte()
     }
 
     fn read_short(&mut self) -> u16 {
-        self.frames[self.frames_top].as_mut().unwrap().read_short()
+        self.frames.last_mut().unwrap().read_short()
     }
 
     fn read_constant(&mut self) -> Value {
-        self.frames[self.frames_top]
-            .as_mut()
-            .unwrap()
-            .read_constant()
+        self.frames.last_mut().unwrap().read_constant()
     }
 
     fn read_string(&mut self) -> &str {
-        self.frames[self.frames_top].as_mut().unwrap().read_string()
+        self.frames.last_mut().unwrap().read_string()
     }
 
     fn read_slot(&mut self) -> usize {
         let slot = self.read_byte() as usize;
-        self.frames[self.frames_top].as_mut().unwrap().first_slot + slot
+        self.frames.last_mut().unwrap().first_slot + slot
     }
 
-    fn current_ip(&self) -> usize {
-        self.frames[self.frames_top].as_ref().unwrap().ip
+    fn current_ip(&mut self) -> usize {
+        self.frames.last_mut().unwrap().ip
     }
 
     fn inc_ip(&mut self, offset: usize) {
-        self.frames[self.frames_top].as_mut().unwrap().ip += offset
+        self.frames.last_mut().unwrap().ip += offset
     }
 
     fn dec_ip(&mut self, offset: usize) {
-        self.frames[self.frames_top].as_mut().unwrap().ip -= offset
+        self.frames.last_mut().unwrap().ip -= offset
     }
 
     fn push_stack(&mut self, value: Value) {
@@ -308,13 +313,12 @@ impl<'a> VM<'a> {
 
     fn runtime_error(&mut self, message: &str) {
         eprintln!("{message}");
-        let instruction = self.current_ip() - 1;
-        let line = unsafe {
-            (*self.frames[self.frames_top].as_mut().unwrap().function)
-                .chunk
-                .lines[instruction]
-        };
-        eprintln!("[line {line}] in script");
+        for frame in self.frames.iter().rev() {
+            let function = unsafe { &(*frame.function) };
+            let instruction = frame.ip - 1;
+            let line = function.chunk.lines[instruction];
+            eprintln!("[line {line}] in {function}");
+        }
         self.reset_stack();
     }
 
@@ -337,5 +341,34 @@ impl<'a> VM<'a> {
         }
 
         Ok(())
+    }
+
+    fn call_value(&mut self, callee: Value, arg_count: usize) -> bool {
+        match callee {
+            Value::ObjFunction(obj_fun) => self.call(obj_fun, arg_count),
+            _ => {
+                self.runtime_error("Can only call functions and classes.");
+                false
+            }
+        }
+    }
+
+    fn call(&mut self, function: *const ObjFunction, arg_count: usize) -> bool {
+        if arg_count != unsafe { (*function).arity as usize } {
+            self.runtime_error(
+                format!("Expected {arg_count} arguments but got {arg_count}").as_str(),
+            );
+            return false;
+        }
+        if self.frames.len() == FRAMES_MAX {
+            self.runtime_error("Stack overflow.");
+            return false;
+        }
+        self.frames.push(CallFrame {
+            function,
+            first_slot: self.stack_top - arg_count - 1,
+            ip: 0,
+        });
+        true
     }
 }

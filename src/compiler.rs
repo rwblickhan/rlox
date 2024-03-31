@@ -59,6 +59,7 @@ enum InfixParserType {
     Binary,
     And,
     Or,
+    Call,
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -631,6 +632,27 @@ impl<'a> Compiler<'a> {
         self.patch_jump(end_jump);
     }
 
+    fn call(&mut self) {
+        let arg_count = self.argument_list();
+        self.emit_bytes(Opcode::Call as u8, arg_count);
+    }
+
+    fn argument_list(&mut self) -> u8 {
+        let mut arg_count = 0;
+        if !self.check(TokenType::RightParen) {
+            loop {
+                self.expression();
+                arg_count += 1;
+
+                if !self.match_token(TokenType::Comma) {
+                    break;
+                }
+            }
+        }
+        self.consume(TokenType::RightParen, "Expect ')' after arguments.");
+        arg_count
+    }
+
     fn parse_precedence(&mut self, precedence: Precedence) {
         self.advance();
 
@@ -653,6 +675,7 @@ impl<'a> Compiler<'a> {
                     InfixParserType::Binary => self.binary(),
                     InfixParserType::And => self.and(),
                     InfixParserType::Or => self.or(),
+                    InfixParserType::Call => self.call(),
                 },
                 None => self.error("Expect expression with infix parser."),
             }
@@ -750,6 +773,7 @@ impl TokenType {
             TokenType::Identifier => Precedence::None,
             TokenType::And => Precedence::And,
             TokenType::Or => Precedence::Or,
+            TokenType::LeftParen => Precedence::Call,
             _ => Precedence::None,
         }
     }
@@ -771,6 +795,7 @@ impl TokenType {
 
     fn infix_parser_type(&self) -> Option<InfixParserType> {
         match self {
+            TokenType::LeftParen => Some(InfixParserType::Call),
             TokenType::Plus => Some(InfixParserType::Binary),
             TokenType::Minus => Some(InfixParserType::Binary),
             TokenType::Star => Some(InfixParserType::Binary),

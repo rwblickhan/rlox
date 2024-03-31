@@ -29,6 +29,7 @@ pub enum Opcode {
     JumpIfFalse,
     Jump,
     Loop,
+    Call,
 }
 
 pub struct Chunk {
@@ -85,6 +86,7 @@ impl TryFrom<u8> for Opcode {
             21 => Ok(Opcode::JumpIfFalse),
             22 => Ok(Opcode::Jump),
             23 => Ok(Opcode::Loop),
+            24 => Ok(Opcode::Call),
             _ => Err(()),
         }
     }
