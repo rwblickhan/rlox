@@ -3,13 +3,14 @@ use std::fmt::Display;
 use crate::object_string::ObjString;
 use crate::{chunk::Chunk, memory::GC};
 
+#[derive(Clone, Copy, PartialEq)]
 pub enum FunctionType {
     Function,
     Script,
 }
 
 pub struct ObjFunction {
-    function_type: FunctionType,
+    pub function_type: FunctionType,
     pub arity: u8,
     pub chunk: Chunk,
     pub name: Option<ObjString>,

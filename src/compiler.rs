@@ -328,6 +328,8 @@ impl<'a> Compiler<'a> {
             self.for_statement();
         } else if self.match_token(TokenType::If) {
             self.if_statement();
+        } else if self.match_token(TokenType::Return) {
+            self.return_statement();
         } else if self.match_token(TokenType::While) {
             self.while_statement();
         } else if self.match_token(TokenType::LeftBrace) {
@@ -403,6 +405,22 @@ impl<'a> Compiler<'a> {
             self.statement();
         }
         self.patch_jump(else_jump);
+    }
+
+    fn return_statement(&mut self) {
+        if let FunctionType::Script =
+            unsafe { (*self.current_compiler_state().function).function_type }
+        {
+            self.error("Can't return from top-level code.");
+            return;
+        }
+        if self.match_token(TokenType::Semicolon) {
+            self.emit_return();
+        } else {
+            self.expression();
+            self.consume(TokenType::Semicolon, "Expect ';' after return value.");
+            self.emit_byte(Opcode::Return as u8);
+        }
     }
 
     fn while_statement(&mut self) {
