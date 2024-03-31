@@ -734,6 +734,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn emit_return(&mut self) {
+        self.emit_byte(Opcode::Nil as u8);
         self.emit_byte(Opcode::Return as u8);
     }
 

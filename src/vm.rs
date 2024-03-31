@@ -141,7 +141,14 @@ impl<'a> VM<'a> {
                         }
                     }
                     Opcode::Return => {
-                        return InterpretResult::Ok;
+                        let result = self.pop_stack();
+                        let frame = self.frames.pop().unwrap();
+                        if self.frames.is_empty() {
+                            self.pop_stack();
+                            return InterpretResult::Ok;
+                        }
+                        self.stack_top = frame.first_slot;
+                        self.push_stack(result);
                     }
                     Opcode::Nil => {
                         self.push_stack(Value::Nil);
