@@ -10,9 +10,9 @@ pub enum FunctionType {
 
 pub struct ObjFunction {
     function_type: FunctionType,
-    arity: u8,
+    pub arity: u8,
     pub chunk: Chunk,
-    name: Option<ObjString>,
+    pub name: Option<ObjString>,
     next: Option<*mut dyn GC>,
 }
 
