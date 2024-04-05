@@ -1,6 +1,7 @@
 use crate::chunk::{Chunk, Opcode};
 use crate::debug::disassemble_chunk;
 use crate::memory::GarbageCollector;
+use crate::object_closure::Upvalue;
 use crate::object_function::{FunctionType, ObjFunction};
 use crate::object_string::ObjString;
 use crate::scanner::{Scanner, Token, TokenType};
@@ -22,6 +23,7 @@ pub struct Compiler<'a> {
 
 pub struct CompilerState<'a> {
     locals: ArrayVec<[Local<'a>; MAX_LOCALS]>,
+    upvalues: ArrayVec<[Upvalue; MAX_LOCALS]>,
     scope_depth: i32,
     function: *mut ObjFunction,
 }
@@ -36,6 +38,7 @@ impl CompilerState<'_> {
         locals.push(name_local);
         CompilerState {
             locals,
+            upvalues: ArrayVec::new(),
             scope_depth: 0,
             function,
         }
@@ -350,6 +353,7 @@ impl<'a> Compiler<'a> {
     fn for_statement(&mut self) {
         self.current_compiler_state_mut().begin_scope();
         self.consume(TokenType::LeftParen, "Expect '(' after 'for'.");
+        // Parse the initializer, if it exists
         if self.match_token(TokenType::Semicolon) {
             // No initializer!
         } else if self.match_token(TokenType::Var) {
@@ -358,6 +362,7 @@ impl<'a> Compiler<'a> {
             self.expression_statement();
         }
 
+        // Parse the loop condition
         let mut loop_start = self.current_chunk().code.len();
         let mut exit_jump = None;
         if !self.match_token(TokenType::Semicolon) {
@@ -367,6 +372,7 @@ impl<'a> Compiler<'a> {
             self.emit_byte(Opcode::Pop as u8);
         }
 
+        //Parse the incrementer
         if !self.match_token(TokenType::RightParen) {
             let body_jump = self.emit_jump(Opcode::Jump);
             let increment_start = self.current_chunk().code.len();
@@ -482,6 +488,7 @@ impl<'a> Compiler<'a> {
 
     fn end_scope(&mut self) {
         self.current_compiler_state_mut().scope_depth -= 1;
+        // Emit instructions to pop from the stack everything now out of scope
         for i in (0..(self.current_compiler_state().locals.len())).rev() {
             let local = &self.current_compiler_state().locals[i];
             if local.depth > self.current_compiler_state().scope_depth {
@@ -564,14 +571,18 @@ impl<'a> Compiler<'a> {
                 0
             }
         };
+
         let (set_op, get_op, arg) = if arg != -1 {
             (Opcode::SetLocal, Opcode::GetLocal, arg as u8)
         } else {
-            (
-                Opcode::SetGlobal,
-                Opcode::GetGlobal,
-                self.identifier_constant(name.source),
-            )
+            match self.resolve_upvalue(name) {
+                Ok(arg) if arg != -1 => (Opcode::SetUpvalue, Opcode::GetUpvalue, arg as u8),
+                _ => (
+                    Opcode::SetGlobal,
+                    Opcode::GetGlobal,
+                    self.identifier_constant(name.source),
+                ),
+            }
         };
         if self.match_token(TokenType::Equal) && can_assign {
             self.expression();
@@ -597,6 +608,45 @@ impl<'a> Compiler<'a> {
         }
 
         Ok(-1)
+    }
+
+    fn resolve_upvalue(&mut self, name: Token) -> Result<i32, String> {
+        if self.compiler_states.len() == 1 {
+            return Ok(-1);
+        };
+
+        // Resolve the local in the parent's compiler state
+        let parent_compiler_state = &self.compiler_states[self.compiler_states.len() - 2];
+        match self.resolve_local(parent_compiler_state, name) {
+            Ok(i) if i != -1 => match u8::try_from(i) {
+                Ok(i) => Ok(self.add_upvalue(i, true)),
+                Err(_) => Err("Failed to convert to integer".to_string()),
+            },
+            Ok(_) => Ok(-1),
+            Err(e) => Err(e),
+        }
+    }
+
+    fn add_upvalue(&mut self, index: u8, is_local: bool) -> i32 {
+        let upvalue_count = unsafe { (*self.current_compiler_state().function).upvalue_count };
+
+        // Check if we already have an upvalue pointing at this identifier
+        for i in 0..upvalue_count {
+            let upvalue = &self.current_compiler_state().upvalues[i];
+            if upvalue.index == index && upvalue.is_local == is_local {
+                return i32::try_from(i).unwrap();
+            }
+        }
+
+        // Add a new upvalue
+        self.current_compiler_state_mut()
+            .upvalues
+            .push(Upvalue::new(index, is_local));
+
+        unsafe {
+            (*self.current_compiler_state().function).upvalue_count += 1;
+        }
+        i32::try_from(upvalue_count + 1).unwrap()
     }
 
     fn grouping(&mut self) {

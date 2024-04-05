@@ -58,6 +58,9 @@ pub fn disassemble_instruction(opcode: &Opcode, chunk: &Chunk, offset: usize) ->
             );
             offset + 2
         }
+        // TODO
+        Opcode::GetUpvalue => disassemble_byte_instruction(opcode, chunk, offset),
+        Opcode::SetUpvalue => disassemble_byte_instruction(opcode, chunk, offset),
     }
 }
 

@@ -2,6 +2,18 @@ use crate::memory::GC;
 use crate::object_function::ObjFunction;
 use std::fmt::Display;
 
+#[derive(Default, Clone, Copy)]
+pub struct Upvalue {
+    pub index: u8,
+    pub is_local: bool,
+}
+
+impl Upvalue {
+    pub fn new(index: u8, is_local: bool) -> Upvalue {
+        Upvalue { index, is_local }
+    }
+}
+
 pub struct ObjClosure {
     pub function: *const ObjFunction,
     next: Option<*mut dyn GC>,

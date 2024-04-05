@@ -276,6 +276,8 @@ impl<'a> VM<'a> {
                         let closure = self.garbage_collector.heap_alloc(ObjClosure::new(obj_fun));
                         self.push_stack(Value::ObjClosure(closure));
                     }
+                    Opcode::GetUpvalue => {}
+                    Opcode::SetUpvalue => {}
                 }
             }
         }
