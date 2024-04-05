@@ -50,6 +50,14 @@ pub fn disassemble_instruction(opcode: &Opcode, chunk: &Chunk, offset: usize) ->
         Opcode::Jump => disassemble_jump_instruction(opcode, chunk, offset, true),
         Opcode::Loop => disassemble_jump_instruction(opcode, chunk, offset, false),
         Opcode::Call => disassemble_byte_instruction(opcode, chunk, offset),
+        Opcode::Closure => {
+            let constant_offset = chunk.code[offset + 1];
+            println!(
+                "{:<16} {:>4} {}",
+                opcode, constant_offset, chunk.constants[constant_offset as usize]
+            );
+            offset + 2
+        }
     }
 }
 

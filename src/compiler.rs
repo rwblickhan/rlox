@@ -240,7 +240,7 @@ impl<'a> Compiler<'a> {
 
         let function = self.end_compiler(false);
         let constant = self.make_constant(Value::ObjFunction(function));
-        self.emit_bytes(Opcode::Constant as u8, constant);
+        self.emit_bytes(Opcode::Closure as u8, constant);
     }
 
     fn var_declaration(&mut self) {

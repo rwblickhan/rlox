@@ -1,3 +1,4 @@
+use crate::object_closure::ObjClosure;
 use crate::object_function::ObjFunction;
 use crate::object_native::ObjNative;
 use crate::object_string::ObjString;
@@ -11,6 +12,7 @@ pub enum Value {
     ObjString(*const ObjString),
     ObjFunction(*const ObjFunction),
     ObjNative(*const ObjNative),
+    ObjClosure(*const ObjClosure),
 }
 
 impl Value {
@@ -36,6 +38,7 @@ impl Display for Value {
             Value::ObjString(obj_str) => unsafe { (**obj_str).fmt(f) },
             Value::ObjFunction(obj_func) => unsafe { (**obj_func).fmt(f) },
             Value::ObjNative(obj_native) => unsafe { (**obj_native).fmt(f) },
+            Value::ObjClosure(obj_closure) => unsafe { (**obj_closure).fmt(f) },
         }
     }
 }

@@ -2,11 +2,12 @@ use crate::chunk::Opcode;
 use crate::compiler;
 use crate::debug;
 use crate::memory::GarbageCollector;
-use crate::object_function::ObjFunction;
+use crate::object_closure::ObjClosure;
 use crate::object_native::NativeFunction;
 use crate::object_native::ObjNative;
 use crate::object_string::ObjString;
 use crate::value::Value;
+use core::panic;
 use std::collections::HashMap;
 use tinyvec::ArrayVec;
 
@@ -22,7 +23,7 @@ pub struct VM<'a> {
 }
 
 pub struct CallFrame {
-    pub function: *const ObjFunction,
+    pub closure: *const ObjClosure,
     pub ip: usize,
     pub first_slot: usize,
 }
@@ -30,7 +31,7 @@ pub struct CallFrame {
 impl Default for CallFrame {
     fn default() -> Self {
         CallFrame {
-            function: std::ptr::null(),
+            closure: std::ptr::null(),
             ip: 0,
             first_slot: 0,
         }
@@ -39,7 +40,7 @@ impl Default for CallFrame {
 
 impl CallFrame {
     pub fn read_byte(&mut self) -> u8 {
-        let byte = unsafe { (*self.function).chunk.code[self.ip] };
+        let byte = unsafe { (*(*self.closure).function).chunk.code[self.ip] };
         self.ip += 1;
         byte
     }
@@ -50,7 +51,7 @@ impl CallFrame {
 
     pub fn read_constant(&mut self) -> Value {
         let constant = self.read_byte() as usize;
-        unsafe { (*self.function).chunk.constants[constant].clone() }
+        unsafe { (*(*self.closure).function).chunk.constants[constant].clone() }
     }
 
     fn read_string(&mut self) -> &str {
@@ -102,7 +103,10 @@ impl<'a> VM<'a> {
         match compiler.compile(false) {
             Some(function) => {
                 self.push_stack(Value::ObjFunction(function));
-                self.call(function, 0);
+                let obj_closure = self.garbage_collector.heap_alloc(ObjClosure::new(function));
+                self.pop_stack();
+                self.push_stack(Value::ObjClosure(obj_closure));
+                self.call(obj_closure, 0);
             }
             None => return InterpretResult::CompileError,
         };
@@ -122,7 +126,7 @@ impl<'a> VM<'a> {
                     println!();
                     debug::disassemble_instruction(
                         &instruction,
-                        unsafe { &(*(self.frames.last_mut().unwrap().function)).chunk },
+                        unsafe { &(*(*(self.frames.last_mut().unwrap().closure)).function).chunk },
                         self.current_ip() - 1,
                     );
                 }
@@ -265,6 +269,13 @@ impl<'a> VM<'a> {
                             return InterpretResult::RuntimeError;
                         }
                     }
+                    Opcode::Closure => {
+                        let Value::ObjFunction(obj_fun) = self.read_constant() else {
+                            panic!("Invalid constant for Opcode::Closure");
+                        };
+                        let closure = self.garbage_collector.heap_alloc(ObjClosure::new(obj_fun));
+                        self.push_stack(Value::ObjClosure(closure));
+                    }
                 }
             }
         }
@@ -324,7 +335,7 @@ impl<'a> VM<'a> {
     fn runtime_error(&mut self, message: &str) {
         eprintln!("{message}");
         for frame in self.frames.iter().rev() {
-            let function = unsafe { &(*frame.function) };
+            let function = unsafe { &(*(*frame.closure).function) };
             let instruction = frame.ip - 1;
             let line = function.chunk.lines[instruction];
             eprintln!("[line {line}] in {function}");
@@ -372,11 +383,11 @@ impl<'a> VM<'a> {
 
     fn call_value(&mut self, callee: Value, arg_count: usize) -> bool {
         match callee {
-            Value::ObjFunction(obj_fun) => self.call(obj_fun, arg_count),
             Value::ObjNative(obj_native) => {
                 self.call_native(obj_native, arg_count);
                 true
             }
+            Value::ObjClosure(obj_closure) => self.call(obj_closure, arg_count),
             _ => {
                 self.runtime_error("Can only call functions and classes.");
                 false
@@ -384,7 +395,8 @@ impl<'a> VM<'a> {
         }
     }
 
-    fn call(&mut self, function: *const ObjFunction, arg_count: usize) -> bool {
+    fn call(&mut self, closure: *const ObjClosure, arg_count: usize) -> bool {
+        let function = unsafe { (*closure).function };
         if arg_count != unsafe { (*function).arity as usize } {
             self.runtime_error(
                 format!("Expected {arg_count} arguments but got {arg_count}").as_str(),
@@ -396,7 +408,7 @@ impl<'a> VM<'a> {
             return false;
         }
         self.frames.push(CallFrame {
-            function,
+            closure,
             first_slot: self.stack_top - arg_count - 1,
             ip: 0,
         });

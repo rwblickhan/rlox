@@ -2,6 +2,7 @@ mod chunk;
 mod compiler;
 mod debug;
 mod memory;
+mod object_closure;
 mod object_function;
 mod object_native;
 mod object_string;
