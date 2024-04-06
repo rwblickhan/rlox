@@ -1,8 +1,17 @@
-fun fib(n) {
-  if (n < 2) return n;
-  return fib(n - 2) + fib(n - 1);
+fun outer() {
+  var a = 1;
+  var b = 2;
+  fun middle() {
+    var c = 3;
+    var d = 4;
+    fun inner() {
+      print a + c + b + d;
+    }
+    return inner;
+  }
+  return middle;
 }
 
-var start = clock();
-print fib(20);
-print clock() - start;
+var middle = outer();
+var inner = middle();
+inner(0);

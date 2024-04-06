@@ -100,7 +100,7 @@ impl<'a> VM<'a> {
     pub fn interpret(&mut self, source: String) -> InterpretResult {
         self.define_native("clock", NativeFunction::Clock);
         let mut compiler = compiler::Compiler::new(source.as_str(), self.garbage_collector);
-        match compiler.compile(false) {
+        match compiler.compile(true) {
             Some(function) => {
                 self.push_stack(Value::ObjFunction(function));
                 let obj_closure = self.garbage_collector.heap_alloc(ObjClosure::new(function));
@@ -399,10 +399,9 @@ impl<'a> VM<'a> {
 
     fn call(&mut self, closure: *const ObjClosure, arg_count: usize) -> bool {
         let function = unsafe { (*closure).function };
-        if arg_count != unsafe { (*function).arity as usize } {
-            self.runtime_error(
-                format!("Expected {arg_count} arguments but got {arg_count}").as_str(),
-            );
+        let arity = unsafe { (*function).arity as usize };
+        if arg_count != arity {
+            self.runtime_error(format!("Expected {arity} arguments but got {arg_count}").as_str());
             return false;
         }
         if self.frames.len() == FRAMES_MAX {

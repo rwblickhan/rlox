@@ -47,6 +47,44 @@ impl CompilerState<'_> {
     pub fn begin_scope(&mut self) {
         self.scope_depth += 1;
     }
+
+    fn resolve_local(&self, name: Token) -> Result<i32, String> {
+        for i in (0..(self.locals.len())).rev() {
+            let local = &self.locals[i];
+            if Some(name) == local.name {
+                if local.depth == -1 {
+                    return Err("Can't read local variable in its own initializer.".to_string());
+                }
+                let i = i32::try_from(i);
+                match i {
+                    Ok(i) => return Ok(i),
+                    Err(_) => return Err("Failed to convert to integer".to_string()),
+                }
+            }
+        }
+
+        Ok(-1)
+    }
+
+    pub fn add_upvalue(&mut self, index: u8, is_local: bool) -> i32 {
+        let upvalue_count = unsafe { (*self.function).upvalue_count };
+
+        // Check if we already have an upvalue pointing at this identifier
+        for i in 0..upvalue_count {
+            let upvalue = &self.upvalues[i];
+            if upvalue.index == index && upvalue.is_local == is_local {
+                return i32::try_from(i).unwrap();
+            }
+        }
+
+        // Add a new upvalue
+        self.upvalues.push(Upvalue::new(index, is_local));
+
+        unsafe {
+            (*self.function).upvalue_count += 1;
+        }
+        i32::try_from(upvalue_count + 1).unwrap()
+    }
 }
 
 #[derive(Default)]
@@ -244,6 +282,12 @@ impl<'a> Compiler<'a> {
         let function = self.end_compiler(false);
         let constant = self.make_constant(Value::ObjFunction(function));
         self.emit_bytes(Opcode::Closure as u8, constant);
+        for i in unsafe { 0..(*self.current_compiler_state().function).upvalue_count } {
+            let is_local = self.current_compiler_state().upvalues[i].is_local;
+            let index = self.current_compiler_state().upvalues[i].index;
+            self.emit_byte(if is_local { 1 } else { 0 });
+            self.emit_byte(index);
+        }
     }
 
     fn var_declaration(&mut self) {
@@ -564,7 +608,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn named_variable(&mut self, name: Token, can_assign: bool) {
-        let arg = match self.resolve_local(self.current_compiler_state(), name) {
+        let arg = match self.current_compiler_state().resolve_local(name) {
             Ok(arg) => arg,
             Err(err) => {
                 self.error(err.as_str());
@@ -575,7 +619,7 @@ impl<'a> Compiler<'a> {
         let (set_op, get_op, arg) = if arg != -1 {
             (Opcode::SetLocal, Opcode::GetLocal, arg as u8)
         } else {
-            match self.resolve_upvalue(name) {
+            match self.resolve_upvalue(self.compiler_states.len() - 1, name) {
                 Ok(arg) if arg != -1 => (Opcode::SetUpvalue, Opcode::GetUpvalue, arg as u8),
                 _ => (
                     Opcode::SetGlobal,
@@ -584,6 +628,7 @@ impl<'a> Compiler<'a> {
                 ),
             }
         };
+
         if self.match_token(TokenType::Equal) && can_assign {
             self.expression();
             self.emit_bytes(set_op as u8, arg);
@@ -592,61 +637,30 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn resolve_local(&self, compiler_state: &CompilerState, name: Token) -> Result<i32, String> {
-        for i in (0..(compiler_state.locals.len())).rev() {
-            let local = &compiler_state.locals[i];
-            if Some(name) == local.name {
-                if local.depth == -1 {
-                    return Err("Can't read local variable in its own initializer.".to_string());
-                }
-                let i = i32::try_from(i);
-                match i {
-                    Ok(i) => return Ok(i),
-                    Err(_) => return Err("Failed to convert to integer".to_string()),
-                }
-            }
-        }
-
-        Ok(-1)
-    }
-
-    fn resolve_upvalue(&mut self, name: Token) -> Result<i32, String> {
-        if self.compiler_states.len() == 1 {
+    fn resolve_upvalue(&mut self, compiler_state_index: usize, name: Token) -> Result<i32, String> {
+        // Check if we're already at the top scope
+        if compiler_state_index == 0 {
             return Ok(-1);
         };
 
         // Resolve the local in the parent's compiler state
-        let parent_compiler_state = &self.compiler_states[self.compiler_states.len() - 2];
-        match self.resolve_local(parent_compiler_state, name) {
-            Ok(i) if i != -1 => match u8::try_from(i) {
-                Ok(i) => Ok(self.add_upvalue(i, true)),
+        let local = self.compiler_states[compiler_state_index - 1].resolve_local(name)?;
+        if local != -1 {
+            return match u8::try_from(local) {
+                Ok(i) => Ok(self.compiler_states[compiler_state_index].add_upvalue(i, true)),
                 Err(_) => Err("Failed to convert to integer".to_string()),
-            },
-            Ok(_) => Ok(-1),
-            Err(e) => Err(e),
+            };
+        };
+
+        // Recursively resolve the upvalue in the parent's compiler state
+        let upvalue = self.resolve_upvalue(compiler_state_index - 1, name)?;
+        if upvalue != -1 {
+            return match u8::try_from(upvalue) {
+                Ok(i) => Ok(self.compiler_states[compiler_state_index].add_upvalue(i, false)),
+                Err(_) => Err("Failed to convert to integer".to_string()),
+            };
         }
-    }
-
-    fn add_upvalue(&mut self, index: u8, is_local: bool) -> i32 {
-        let upvalue_count = unsafe { (*self.current_compiler_state().function).upvalue_count };
-
-        // Check if we already have an upvalue pointing at this identifier
-        for i in 0..upvalue_count {
-            let upvalue = &self.current_compiler_state().upvalues[i];
-            if upvalue.index == index && upvalue.is_local == is_local {
-                return i32::try_from(i).unwrap();
-            }
-        }
-
-        // Add a new upvalue
-        self.current_compiler_state_mut()
-            .upvalues
-            .push(Upvalue::new(index, is_local));
-
-        unsafe {
-            (*self.current_compiler_state().function).upvalue_count += 1;
-        }
-        i32::try_from(upvalue_count + 1).unwrap()
+        Ok(-1)
     }
 
     fn grouping(&mut self) {

@@ -1,4 +1,7 @@
-use crate::chunk::{Chunk, Opcode};
+use crate::{
+    chunk::{Chunk, Opcode},
+    value::Value,
+};
 
 pub fn disassemble_chunk(chunk: &Chunk, name: &str) {
     println!("== {} ==", name);
@@ -56,9 +59,27 @@ pub fn disassemble_instruction(opcode: &Opcode, chunk: &Chunk, offset: usize) ->
                 "{:<16} {:>4} {}",
                 opcode, constant_offset, chunk.constants[constant_offset as usize]
             );
-            offset + 2
+
+            let upvalue_count =
+                if let Value::ObjFunction(obj_fun) = &chunk.constants[constant_offset as usize] {
+                    let upvalue_count = unsafe { (**obj_fun).upvalue_count };
+                    for i in 0..upvalue_count {
+                        let is_local = chunk.code[(offset + 2) + i];
+                        let index = chunk.code[(offset + 2) + (i + 1)];
+                        println!(
+                            "{:>4}       |                     {} {}",
+                            offset,
+                            if is_local == 1 { "local" } else { "upvalue" },
+                            index
+                        );
+                    }
+                    upvalue_count
+                } else {
+                    0
+                };
+
+            offset + 2 + (upvalue_count * 2)
         }
-        // TODO
         Opcode::GetUpvalue => disassemble_byte_instruction(opcode, chunk, offset),
         Opcode::SetUpvalue => disassemble_byte_instruction(opcode, chunk, offset),
     }
