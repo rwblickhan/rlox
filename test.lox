@@ -1,17 +1,8 @@
 fun outer() {
-  var a = 1;
-  var b = 2;
-  fun middle() {
-    var c = 3;
-    var d = 4;
-    fun inner() {
-      print a + c + b + d;
-    }
-    return inner;
+  var x = "outside";
+  fun inner() {
+    print x;
   }
-  return middle;
+  inner();
 }
-
-var middle = outer();
-var inner = middle();
-inner(0);
+outer();

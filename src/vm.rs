@@ -6,6 +6,7 @@ use crate::object_closure::ObjClosure;
 use crate::object_native::NativeFunction;
 use crate::object_native::ObjNative;
 use crate::object_string::ObjString;
+use crate::object_upvalue::ObjUpvalue;
 use crate::value::Value;
 use core::panic;
 use std::collections::HashMap;
@@ -275,12 +276,45 @@ impl<'a> VM<'a> {
                         };
                         let closure = self.garbage_collector.heap_alloc(ObjClosure::new(obj_fun));
                         self.push_stack(Value::ObjClosure(closure));
+                        let upvalue_count = unsafe { (*closure).upvalue_count };
+                        for _ in 0..upvalue_count {
+                            let is_local = self.read_byte();
+                            let index = self.read_byte();
+                            let value = if is_local == 1 {
+                                let location =
+                                    self.frames.last().unwrap().first_slot + (index as usize);
+                                self.capture_upvalue(location)
+                            } else {
+                                unsafe {
+                                    (*self.frames.last().unwrap().closure).upvalues[index as usize]
+                                }
+                            };
+                            unsafe { (*closure).upvalues.push(value) }
+                        }
                     }
-                    Opcode::GetUpvalue => {}
-                    Opcode::SetUpvalue => {}
+                    Opcode::GetUpvalue => {
+                        let slot = self.read_byte() as usize;
+                        let location = unsafe {
+                            (*(*self.frames.last().unwrap().closure).upvalues[slot]).location
+                        };
+                        let value = self.stack[location].clone();
+                        self.push_stack(value);
+                    }
+                    Opcode::SetUpvalue => {
+                        let slot = self.read_byte() as usize;
+                        let value = self.peek(0);
+                        let location = unsafe {
+                            (*(*self.frames.last().unwrap().closure).upvalues[slot]).location
+                        };
+                        self.stack[location] = value;
+                    }
                 }
             }
         }
+    }
+
+    fn capture_upvalue(&mut self, location: usize) -> *const ObjUpvalue {
+        self.garbage_collector.heap_alloc(ObjUpvalue::new(location))
     }
 
     fn read_byte(&mut self) -> u8 {

@@ -18,14 +18,17 @@ impl Upvalue {
 pub struct ObjClosure {
     pub function: *const ObjFunction,
     pub upvalues: Vec<*const ObjUpvalue>,
+    pub upvalue_count: usize,
     next: Option<*mut dyn GC>,
 }
 
 impl ObjClosure {
     pub fn new(function: *const ObjFunction) -> ObjClosure {
+        let upvalue_count = unsafe { (*function).upvalue_count };
         ObjClosure {
             function,
             upvalues: Vec::new(),
+            upvalue_count,
             next: None,
         }
     }
