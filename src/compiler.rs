@@ -248,16 +248,20 @@ impl<'a> Compiler<'a> {
     }
 
     fn function(&mut self) {
+        // Allocate the ObjFunction
         let function = self
             .garbage_collector
             .heap_alloc(ObjFunction::new(FunctionType::Function, None));
         unsafe {
             (*function).name = Some(ObjString::new(self.previous.source));
         }
+
+        // Push a new function scope
         let compiler_state = CompilerState::new(function);
         self.compiler_states.push(compiler_state);
-
         self.current_compiler_state_mut().begin_scope();
+
+        // Parse parameters
         self.consume(TokenType::LeftParen, "Expect '(' after function name.");
         if !self.check(TokenType::RightParen) {
             loop {
@@ -272,6 +276,8 @@ impl<'a> Compiler<'a> {
             }
         }
         self.consume(TokenType::RightParen, "Expect ')' after parameters.");
+
+        // Parse function body
         self.consume(TokenType::LeftBrace, "Expect '{' before function body.");
         self.block();
 
