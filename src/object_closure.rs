@@ -1,5 +1,6 @@
 use crate::memory::GC;
 use crate::object_function::ObjFunction;
+use crate::object_upvalue::ObjUpvalue;
 use std::fmt::Display;
 
 #[derive(Default, Clone, Copy)]
@@ -16,6 +17,7 @@ impl Upvalue {
 
 pub struct ObjClosure {
     pub function: *const ObjFunction,
+    pub upvalues: Vec<*const ObjUpvalue>,
     next: Option<*mut dyn GC>,
 }
 
@@ -23,6 +25,7 @@ impl ObjClosure {
     pub fn new(function: *const ObjFunction) -> ObjClosure {
         ObjClosure {
             function,
+            upvalues: Vec::new(),
             next: None,
         }
     }

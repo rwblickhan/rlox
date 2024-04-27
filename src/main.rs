@@ -6,6 +6,7 @@ mod object_closure;
 mod object_function;
 mod object_native;
 mod object_string;
+mod object_upvalue;
 mod scanner;
 mod value;
 mod vm;

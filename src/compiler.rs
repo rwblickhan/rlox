@@ -608,6 +608,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn named_variable(&mut self, name: Token, can_assign: bool) {
+        // Attempt to resolve as a local
         let arg = match self.current_compiler_state().resolve_local(name) {
             Ok(arg) => arg,
             Err(err) => {
@@ -619,8 +620,10 @@ impl<'a> Compiler<'a> {
         let (set_op, get_op, arg) = if arg != -1 {
             (Opcode::SetLocal, Opcode::GetLocal, arg as u8)
         } else {
+            // Attempt to resolve as an upvalue
             match self.resolve_upvalue(self.compiler_states.len() - 1, name) {
                 Ok(arg) if arg != -1 => (Opcode::SetUpvalue, Opcode::GetUpvalue, arg as u8),
+                // If not local or upvalue, assume the identifier is a global
                 _ => (
                     Opcode::SetGlobal,
                     Opcode::GetGlobal,
@@ -643,7 +646,7 @@ impl<'a> Compiler<'a> {
             return Ok(-1);
         };
 
-        // Resolve the local in the parent's compiler state
+        // Attempt to resolve the local in the parent's compiler state
         let local = self.compiler_states[compiler_state_index - 1].resolve_local(name)?;
         if local != -1 {
             return match u8::try_from(local) {
