@@ -33,6 +33,7 @@ impl CompilerState<'_> {
         let mut locals = ArrayVec::new();
         let name_local = Local {
             name: None,
+            is_captured: false,
             depth: 0,
         };
         locals.push(name_local);
@@ -86,6 +87,7 @@ impl CompilerState<'_> {
 #[derive(Default)]
 pub struct Local<'a> {
     name: Option<Token<'a>>,
+    is_captured: bool,
     depth: i32,
 }
 
@@ -345,6 +347,7 @@ impl<'a> Compiler<'a> {
         let current_compiler_state = self.current_compiler_state_mut();
         current_compiler_state.locals.push(Local {
             name: Some(name),
+            is_captured: false,
             depth: -1,
         });
     }
@@ -536,11 +539,16 @@ impl<'a> Compiler<'a> {
 
     fn end_scope(&mut self) {
         self.current_compiler_state_mut().scope_depth -= 1;
+
         // Emit instructions to pop from the stack everything now out of scope
         for i in (0..(self.current_compiler_state().locals.len())).rev() {
             let local = &self.current_compiler_state().locals[i];
             if local.depth > self.current_compiler_state().scope_depth {
-                self.emit_byte(Opcode::Pop as u8);
+                self.emit_byte(if local.is_captured {
+                    Opcode::CloseUpvalue as u8
+                } else {
+                    Opcode::Pop as u8
+                });
                 self.current_compiler_state_mut().locals.pop();
             }
         }
@@ -669,9 +677,12 @@ impl<'a> Compiler<'a> {
         let local = self.compiler_states[compiler_state_index - 1].resolve_local(name)?;
         if let Some(local) = local {
             return match u8::try_from(local) {
-                Ok(i) => Ok(Some(
-                    self.compiler_states[compiler_state_index].add_upvalue(i, true),
-                )),
+                Ok(i) => {
+                    self.compiler_states[compiler_state_index - 1].locals[local].is_captured = true;
+                    return Ok(Some(
+                        self.compiler_states[compiler_state_index].add_upvalue(i, true),
+                    ));
+                }
                 Err(_) => Err("Failed to convert to integer".to_string()),
             };
         }

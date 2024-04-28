@@ -308,6 +308,7 @@ impl<'a> VM<'a> {
                         };
                         self.stack[location] = value;
                     }
+                    Opcode::CloseUpvalue => {}
                 }
             }
         }
