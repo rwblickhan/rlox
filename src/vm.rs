@@ -277,7 +277,7 @@ impl<'a> VM<'a> {
                         let closure = self.garbage_collector.heap_alloc(ObjClosure::new(obj_fun));
                         self.push_stack(Value::ObjClosure(closure));
                         let upvalue_count = unsafe { (*closure).upvalue_count };
-                        for _ in 0..upvalue_count {
+                        for i in 0..upvalue_count {
                             let is_local = self.read_byte();
                             let index = self.read_byte();
                             let value = if is_local == 1 {
@@ -289,7 +289,7 @@ impl<'a> VM<'a> {
                                     (*self.frames.last().unwrap().closure).upvalues[index as usize]
                                 }
                             };
-                            unsafe { (*closure).upvalues.push(value) }
+                            unsafe { (*closure).upvalues[i] = value }
                         }
                     }
                     Opcode::GetUpvalue => {

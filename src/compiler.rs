@@ -79,7 +79,7 @@ impl CompilerState<'_> {
         unsafe {
             (*self.function).upvalue_count += 1;
         }
-        upvalue_count + 1
+        upvalue_count
     }
 }
 
@@ -281,14 +281,16 @@ impl<'a> Compiler<'a> {
         self.consume(TokenType::LeftBrace, "Expect '{' before function body.");
         self.block();
 
+        // Grab the upvalues before we end this function compiler scope
+        let upvalues = self.current_compiler_state_mut().upvalues;
+
+        // Output the closure + upvalue opcodes
         let function = self.end_compiler(false);
         let constant = self.make_constant(Value::ObjFunction(function));
         self.emit_bytes(Opcode::Closure as u8, constant);
-        for i in unsafe { 0..(*self.current_compiler_state().function).upvalue_count } {
-            let is_local = self.current_compiler_state().upvalues[i].is_local;
-            let index = self.current_compiler_state().upvalues[i].index;
-            self.emit_byte(if is_local { 1 } else { 0 });
-            self.emit_byte(index);
+        for upvalue in upvalues {
+            self.emit_byte(if upvalue.is_local { 1 } else { 0 });
+            self.emit_byte(upvalue.index);
         }
     }
 
@@ -665,30 +667,24 @@ impl<'a> Compiler<'a> {
 
         // Attempt to resolve the local in the parent's compiler state
         let local = self.compiler_states[compiler_state_index - 1].resolve_local(name)?;
-        match local {
-            Some(local) => {
-                return match u8::try_from(local) {
-                    Ok(i) => Ok(Some(
-                        self.compiler_states[compiler_state_index].add_upvalue(i, true),
-                    )),
-                    Err(_) => Err("Failed to convert to integer".to_string()),
-                }
-            }
-            None => (),
+        if let Some(local) = local {
+            return match u8::try_from(local) {
+                Ok(i) => Ok(Some(
+                    self.compiler_states[compiler_state_index].add_upvalue(i, true),
+                )),
+                Err(_) => Err("Failed to convert to integer".to_string()),
+            };
         }
 
         // Recursively resolve the upvalue in the parent's compiler state
         let upvalue = self.resolve_upvalue(compiler_state_index - 1, name)?;
-        match upvalue {
-            Some(upvalue) => {
-                return match u8::try_from(upvalue) {
-                    Ok(i) => Ok(Some(
-                        self.compiler_states[compiler_state_index].add_upvalue(i, false),
-                    )),
-                    Err(_) => Err("Failed to convert to integer".to_string()),
-                }
-            }
-            None => (),
+        if let Some(upvalue) = upvalue {
+            return match u8::try_from(upvalue) {
+                Ok(i) => Ok(Some(
+                    self.compiler_states[compiler_state_index].add_upvalue(i, false),
+                )),
+                Err(_) => Err("Failed to convert to integer".to_string()),
+            };
         }
         Ok(None)
     }
