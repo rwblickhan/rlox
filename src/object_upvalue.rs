@@ -1,10 +1,11 @@
 use std::fmt::Display;
 
-use crate::memory::GC;
+use crate::{memory::GC, value::Value};
 
 pub struct ObjUpvalue {
     pub location: usize,
     pub next_upvalue: Option<*mut ObjUpvalue>,
+    pub closed: Option<Value>,
     next: Option<*mut dyn GC>,
 }
 
@@ -12,8 +13,9 @@ impl ObjUpvalue {
     pub fn new(location: usize) -> ObjUpvalue {
         ObjUpvalue {
             location,
-            next: None,
             next_upvalue: None,
+            closed: None,
+            next: None,
         }
     }
 }

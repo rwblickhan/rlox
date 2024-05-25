@@ -1,5 +1,3 @@
-use tinyvec::ArrayVec;
-
 use crate::memory::GC;
 use crate::object_function::ObjFunction;
 use crate::object_upvalue::ObjUpvalue;
@@ -19,7 +17,7 @@ impl Upvalue {
 
 pub struct ObjClosure {
     pub function: *const ObjFunction,
-    pub upvalues: Vec<*const ObjUpvalue>,
+    pub upvalues: Vec<*mut ObjUpvalue>,
     pub upvalue_count: usize,
     next: Option<*mut dyn GC>,
 }
@@ -27,8 +25,8 @@ pub struct ObjClosure {
 impl ObjClosure {
     pub fn new(function: *const ObjFunction) -> ObjClosure {
         let upvalue_count = unsafe { (*function).upvalue_count };
-        let upvalues: Vec<*const ObjUpvalue> =
-            Vec::from_iter((0..upvalue_count).map(|_| std::ptr::null()));
+        let upvalues: Vec<*mut ObjUpvalue> =
+            Vec::from_iter((0..upvalue_count).map(|_| std::ptr::null_mut()));
         ObjClosure {
             function,
             upvalues,

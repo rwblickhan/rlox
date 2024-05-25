@@ -153,6 +153,7 @@ impl<'a> VM<'a> {
                     Opcode::Return => {
                         let result = self.pop_stack();
                         let frame = self.frames.pop().unwrap();
+                        self.close_upvalues(frame.first_slot);
                         if self.frames.is_empty() {
                             self.pop_stack();
                             return InterpretResult::Ok;
@@ -296,27 +297,48 @@ impl<'a> VM<'a> {
                     }
                     Opcode::GetUpvalue => {
                         let slot = self.read_byte() as usize;
-                        let location = unsafe {
-                            (*(*self.frames.last().unwrap().closure).upvalues[slot]).location
-                        };
-                        let value = self.stack[location].clone();
-                        self.push_stack(value);
+                        unsafe {
+                            let closure = self.frames.last().unwrap().closure.clone();
+                            let upvalue = (*closure).upvalues[slot].clone();
+                            match (*upvalue).closed.clone() {
+                                Some(closed) => {
+                                    self.push_stack(closed);
+                                }
+                                None => {
+                                    let location = (*upvalue).location;
+                                    let value = self.stack[location].clone();
+                                    self.push_stack(value);
+                                }
+                            }
+                        }
                     }
                     Opcode::SetUpvalue => {
                         let slot = self.read_byte() as usize;
                         let value = self.peek(0);
-                        let location = unsafe {
-                            (*(*self.frames.last().unwrap().closure).upvalues[slot]).location
-                        };
-                        self.stack[location] = value;
+                        unsafe {
+                            let closure = self.frames.last().unwrap().closure.clone();
+                            let upvalue = (*closure).upvalues[slot].clone();
+                            match (*upvalue).closed.clone() {
+                                Some(_) => {
+                                    (*upvalue).closed = Some(value);
+                                }
+                                None => {
+                                    let location = (*upvalue).location;
+                                    self.stack[location] = value;
+                                }
+                            }
+                        }
                     }
-                    Opcode::CloseUpvalue => {}
+                    Opcode::CloseUpvalue => {
+                        self.close_upvalues(self.stack_top - 1);
+                        self.pop_stack();
+                    }
                 }
             }
         }
     }
 
-    fn capture_upvalue(&mut self, location: usize) -> *const ObjUpvalue {
+    fn capture_upvalue(&mut self, location: usize) -> *mut ObjUpvalue {
         // Search for an existing upvalue for this location
         let mut prev_upvalue: Option<*mut ObjUpvalue> = None;
         let mut upvalue = self.open_upvalues;
@@ -343,6 +365,19 @@ impl<'a> VM<'a> {
             None => self.open_upvalues = Some(new_upvalue_ptr),
         };
         new_upvalue_ptr
+    }
+
+    fn close_upvalues(&mut self, last_location: usize) {
+        while let Some(upvalue) = self.open_upvalues {
+            if unsafe { (*upvalue).location < last_location } {
+                break;
+            }
+            unsafe {
+                (*upvalue).closed = Some(self.stack[(*upvalue).location].clone());
+                // TODO
+                self.open_upvalues = (*upvalue).next_upvalue;
+            }
+        }
     }
 
     fn read_byte(&mut self) -> u8 {
