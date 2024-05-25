@@ -2,6 +2,7 @@ use crate::chunk::Opcode;
 use crate::compiler;
 use crate::debug;
 use crate::memory::GarbageCollector;
+use crate::memory::GC;
 use crate::object_closure::ObjClosure;
 use crate::object_native::NativeFunction;
 use crate::object_native::ObjNative;
@@ -22,6 +23,8 @@ pub struct VM<'a> {
     pub garbage_collector: &'a mut GarbageCollector,
     pub frames: ArrayVec<[CallFrame; FRAMES_MAX]>,
     open_upvalues: Option<*mut ObjUpvalue>,
+    debug_stress_gc: bool,
+    debug_log_gc: bool,
 }
 
 pub struct CallFrame {
@@ -88,7 +91,11 @@ macro_rules! binary_op {
 }
 
 impl<'a> VM<'a> {
-    pub fn new(garbage_collector: &mut GarbageCollector) -> VM {
+    pub fn new(
+        garbage_collector: &mut GarbageCollector,
+        debug_stress_gc: bool,
+        debug_log_gc: bool,
+    ) -> VM {
         const VALUE_ARRAY_REPEAT_VALUE: Value = Value::Number(0.0);
         VM {
             stack: [VALUE_ARRAY_REPEAT_VALUE; STACK_MAX],
@@ -97,6 +104,8 @@ impl<'a> VM<'a> {
             garbage_collector,
             frames: ArrayVec::new(),
             open_upvalues: None,
+            debug_stress_gc,
+            debug_log_gc,
         }
     }
 
@@ -277,7 +286,7 @@ impl<'a> VM<'a> {
                         let Value::ObjFunction(obj_fun) = self.read_constant() else {
                             panic!("Invalid constant for Opcode::Closure");
                         };
-                        let closure = self.garbage_collector.heap_alloc(ObjClosure::new(obj_fun));
+                        let closure = self.heap_alloc(ObjClosure::new(obj_fun));
                         self.push_stack(Value::ObjClosure(closure));
                         let upvalue_count = unsafe { (*closure).upvalue_count };
                         for i in 0..upvalue_count {
@@ -359,7 +368,7 @@ impl<'a> VM<'a> {
         // If no existing upvalue, create a new one and insert it into the linked list
         let mut new_upvalue = ObjUpvalue::new(location);
         new_upvalue.next_upvalue = upvalue;
-        let new_upvalue_ptr = self.garbage_collector.heap_alloc(new_upvalue);
+        let new_upvalue_ptr = self.heap_alloc(new_upvalue);
         match prev_upvalue {
             Some(prev_upvalue) => unsafe { (*prev_upvalue).next_upvalue = Some(new_upvalue_ptr) },
             None => self.open_upvalues = Some(new_upvalue_ptr),
@@ -443,9 +452,9 @@ impl<'a> VM<'a> {
     }
 
     fn define_native(&mut self, name: &str, function: NativeFunction) {
-        let name = self.garbage_collector.heap_alloc(ObjString::new(name));
+        let name = self.heap_alloc(ObjString::new(name));
         self.push_stack(Value::ObjString(name));
-        let native = self.garbage_collector.heap_alloc(ObjNative::new(function));
+        let native = self.heap_alloc(ObjNative::new(function));
         self.push_stack(Value::ObjNative(native));
 
         match self.stack[0] {
@@ -470,9 +479,7 @@ impl<'a> VM<'a> {
         unsafe {
             let str1 = &(*obj_str1).str;
             let str2 = &(*obj_str2).str;
-            let new_obj = self
-                .garbage_collector
-                .heap_alloc(ObjString::new(format!("{}{}", str1, str2).as_str()));
+            let new_obj = self.heap_alloc(ObjString::new(format!("{}{}", str1, str2).as_str()));
             let new_value = Value::ObjString(new_obj);
             self.push_stack(new_value);
         }
@@ -529,4 +536,27 @@ impl<'a> VM<'a> {
         self.stack_top -= arg_count + 1;
         self.push_stack(result);
     }
+
+    fn heap_alloc<T>(&mut self, obj: T) -> *mut T
+    where
+        T: GC + std::fmt::Display + 'static,
+    {
+        if self.debug_stress_gc {
+            self.collect_garbage()
+        }
+        self.garbage_collector.heap_alloc(obj)
+    }
+
+    fn collect_garbage(&mut self) {
+        if self.debug_log_gc {
+            println!("-- gc begin");
+        }
+
+        self.mark_roots();
+
+        if self.debug_log_gc {
+            println!("-- gc end");
+        }
+    }
+    fn mark_roots(&self) {}
 }

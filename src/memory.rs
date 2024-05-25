@@ -8,29 +8,17 @@ pub trait GC {
 
 pub struct GarbageCollector {
     head_object: Option<*mut dyn GC>,
-    debug_stress_gc: bool,
-    debug_log_gc: bool,
 }
 
 impl GarbageCollector {
-    pub fn new(debug_stress_gc: bool, debug_log_gc: bool) -> GarbageCollector {
-        GarbageCollector {
-            head_object: None,
-            debug_stress_gc,
-            debug_log_gc,
-        }
+    pub fn new() -> GarbageCollector {
+        GarbageCollector { head_object: None }
     }
 
     pub fn heap_alloc<T>(&mut self, mut obj: T) -> *mut T
     where
         T: GC + std::fmt::Display + 'static,
     {
-        if self.debug_stress_gc {
-            self.collect_garbage(self.debug_log_gc);
-        }
-        if self.debug_log_gc {
-            println!("allocating {}...", obj);
-        }
         obj.set_next(self.head_object);
         let layout = Layout::new::<T>();
         unsafe {
@@ -52,16 +40,6 @@ impl GarbageCollector {
                 std::ptr::drop_in_place(current_head);
                 std::alloc::dealloc(current_head as *mut u8, (*current_head).layout());
             }
-        }
-    }
-
-    fn collect_garbage(&mut self, debug_log_gc: bool) {
-        if debug_log_gc {
-            println!("-- gc begin");
-        }
-
-        if debug_log_gc {
-            println!("-- gc end");
         }
     }
 }

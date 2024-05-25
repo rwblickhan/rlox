@@ -18,8 +18,8 @@ use vm::{InterpretResult, VM};
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let mut garbage_collector = memory::GarbageCollector::new(true, true);
-    let mut vm = VM::new(&mut garbage_collector);
+    let mut garbage_collector = memory::GarbageCollector::new();
+    let mut vm = VM::new(&mut garbage_collector, true, true);
     if args.len() == 1 {
         repl(&mut vm);
     } else if args.len() == 2 {
