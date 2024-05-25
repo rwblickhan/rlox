@@ -1,6 +1,6 @@
 use crate::chunk::{Chunk, Opcode};
 use crate::debug::disassemble_chunk;
-use crate::memory::GarbageCollector;
+use crate::memory::Allocator;
 use crate::object_closure::Upvalue;
 use crate::object_function::{FunctionType, ObjFunction};
 use crate::object_string::ObjString;
@@ -18,7 +18,7 @@ pub struct Compiler<'a> {
     had_error: bool,
     panic_mode: bool,
     compiler_states: Vec<CompilerState<'a>>,
-    garbage_collector: &'a mut GarbageCollector,
+    allocator: &'a mut Allocator,
 }
 
 pub struct CompilerState<'a> {
@@ -142,17 +142,17 @@ impl Precedence {
 }
 
 impl<'a> Compiler<'a> {
-    pub fn new(source: &'a str, garbage_collector: &'a mut GarbageCollector) -> Compiler<'a> {
+    pub fn new(source: &'a str, allocator: &'a mut Allocator) -> Compiler<'a> {
         let mut scanner = Scanner::new(source);
         let starting_token = Compiler::advance_to_start(&mut scanner);
-        let function = garbage_collector.heap_alloc(ObjFunction::new(FunctionType::Script, None));
+        let function = allocator.heap_alloc(ObjFunction::new(FunctionType::Script, None));
         Compiler {
             current: starting_token,
             previous: starting_token,
             scanner,
             had_error: false,
             panic_mode: false,
-            garbage_collector,
+            allocator,
             compiler_states: vec![CompilerState::new(function)],
         }
     }
@@ -252,7 +252,7 @@ impl<'a> Compiler<'a> {
     fn function(&mut self) {
         // Allocate the ObjFunction
         let function = self
-            .garbage_collector
+            .allocator
             .heap_alloc(ObjFunction::new(FunctionType::Function, None));
         unsafe {
             (*function).name = Some(ObjString::new(self.previous.source));
@@ -353,7 +353,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn identifier_constant(&mut self, name: &str) -> u8 {
-        let obj_str = self.garbage_collector.heap_alloc(ObjString::new(name));
+        let obj_str = self.allocator.heap_alloc(ObjString::new(name));
         self.make_constant(Value::ObjString(obj_str))
     }
 

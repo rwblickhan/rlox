@@ -6,13 +6,13 @@ pub trait GC {
     fn layout(&self) -> Layout;
 }
 
-pub struct GarbageCollector {
+pub struct Allocator {
     head_object: Option<*mut dyn GC>,
 }
 
-impl GarbageCollector {
-    pub fn new() -> GarbageCollector {
-        GarbageCollector { head_object: None }
+impl Allocator {
+    pub fn new() -> Allocator {
+        Allocator { head_object: None }
     }
 
     pub fn heap_alloc<T>(&mut self, mut obj: T) -> *mut T
@@ -44,7 +44,7 @@ impl GarbageCollector {
     }
 }
 
-impl Drop for GarbageCollector {
+impl Drop for Allocator {
     fn drop(&mut self) {
         self.free_objects();
     }

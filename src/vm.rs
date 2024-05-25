@@ -1,7 +1,7 @@
 use crate::chunk::Opcode;
 use crate::compiler;
 use crate::debug;
-use crate::memory::GarbageCollector;
+use crate::memory::Allocator;
 use crate::memory::GC;
 use crate::object_closure::ObjClosure;
 use crate::object_native::NativeFunction;
@@ -20,7 +20,7 @@ pub struct VM<'a> {
     pub stack: [Value; STACK_MAX],
     pub stack_top: usize,
     pub globals: HashMap<String, Value>,
-    pub garbage_collector: &'a mut GarbageCollector,
+    pub allocator: &'a mut Allocator,
     pub frames: ArrayVec<[CallFrame; FRAMES_MAX]>,
     open_upvalues: Option<*mut ObjUpvalue>,
     debug_stress_gc: bool,
@@ -91,17 +91,13 @@ macro_rules! binary_op {
 }
 
 impl<'a> VM<'a> {
-    pub fn new(
-        garbage_collector: &mut GarbageCollector,
-        debug_stress_gc: bool,
-        debug_log_gc: bool,
-    ) -> VM {
+    pub fn new(allocator: &mut Allocator, debug_stress_gc: bool, debug_log_gc: bool) -> VM {
         const VALUE_ARRAY_REPEAT_VALUE: Value = Value::Number(0.0);
         VM {
             stack: [VALUE_ARRAY_REPEAT_VALUE; STACK_MAX],
             stack_top: 0,
             globals: HashMap::new(),
-            garbage_collector,
+            allocator,
             frames: ArrayVec::new(),
             open_upvalues: None,
             debug_stress_gc,
@@ -111,11 +107,11 @@ impl<'a> VM<'a> {
 
     pub fn interpret(&mut self, source: String) -> InterpretResult {
         self.define_native("clock", NativeFunction::Clock);
-        let mut compiler = compiler::Compiler::new(source.as_str(), self.garbage_collector);
+        let mut compiler = compiler::Compiler::new(source.as_str(), self.allocator);
         match compiler.compile(true) {
             Some(function) => {
                 self.push_stack(Value::ObjFunction(function));
-                let obj_closure = self.garbage_collector.heap_alloc(ObjClosure::new(function));
+                let obj_closure = self.allocator.heap_alloc(ObjClosure::new(function));
                 self.pop_stack();
                 self.push_stack(Value::ObjClosure(obj_closure));
                 self.call(obj_closure, 0);
@@ -544,7 +540,7 @@ impl<'a> VM<'a> {
         if self.debug_stress_gc {
             self.collect_garbage()
         }
-        self.garbage_collector.heap_alloc(obj)
+        self.allocator.heap_alloc(obj)
     }
 
     fn collect_garbage(&mut self) {
