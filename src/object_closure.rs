@@ -19,6 +19,7 @@ pub struct ObjClosure {
     pub function: *const ObjFunction,
     pub upvalues: Vec<*mut ObjUpvalue>,
     pub upvalue_count: usize,
+    pub is_marked: bool,
     next: Option<*mut dyn GC>,
 }
 
@@ -31,6 +32,7 @@ impl ObjClosure {
             function,
             upvalues,
             upvalue_count,
+            is_marked: false,
             next: None,
         }
     }

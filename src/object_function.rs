@@ -15,6 +15,7 @@ pub struct ObjFunction {
     pub chunk: Chunk,
     pub name: Option<ObjString>,
     pub upvalue_count: usize,
+    pub is_marked: bool,
     next: Option<*mut dyn GC>,
 }
 
@@ -40,6 +41,7 @@ impl ObjFunction {
             chunk: Chunk::new(),
             name,
             upvalue_count: 0,
+            is_marked: false,
             next: None,
         }
     }

@@ -9,10 +9,10 @@ pub enum Value {
     Bool(bool),
     Nil,
     Number(f64),
-    ObjString(*const ObjString),
-    ObjFunction(*const ObjFunction),
-    ObjNative(*const ObjNative),
-    ObjClosure(*const ObjClosure),
+    ObjString(*mut ObjString),
+    ObjFunction(*mut ObjFunction),
+    ObjNative(*mut ObjNative),
+    ObjClosure(*mut ObjClosure),
 }
 
 impl Value {

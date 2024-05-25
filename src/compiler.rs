@@ -819,7 +819,7 @@ impl<'a> Compiler<'a> {
         self.compiler_states.last_mut().unwrap()
     }
 
-    pub fn compile(&mut self, debug_print_code: bool) -> Option<*const ObjFunction> {
+    pub fn compile(&mut self, debug_print_code: bool) -> Option<*mut ObjFunction> {
         while !self.match_token(TokenType::Eof) {
             self.declaration();
         }
@@ -832,7 +832,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn end_compiler(&mut self, debug_print_code: bool) -> *const ObjFunction {
+    fn end_compiler(&mut self, debug_print_code: bool) -> *mut ObjFunction {
         self.emit_return();
         if debug_print_code && !self.had_error {
             disassemble_chunk(self.current_chunk(), "code");

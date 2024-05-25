@@ -4,6 +4,7 @@ use std::hash::Hash;
 
 pub(crate) struct ObjString {
     pub str: String,
+    pub is_marked: bool,
     hash: u32,
     next: Option<*mut dyn GC>,
 }
@@ -27,6 +28,7 @@ impl ObjString {
         let hash = ObjString::hash_string(string);
         ObjString {
             str: string.to_owned(),
+            is_marked: false,
             hash,
             next: None,
         }

@@ -7,6 +7,7 @@ pub enum NativeFunction {
 
 pub struct ObjNative {
     pub native_function: NativeFunction,
+    pub is_marked: bool,
     next: Option<*mut dyn GC>,
 }
 
@@ -14,6 +15,7 @@ impl ObjNative {
     pub fn new(native_function: NativeFunction) -> ObjNative {
         ObjNative {
             native_function,
+            is_marked: false,
             next: None,
         }
     }

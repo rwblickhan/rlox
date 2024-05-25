@@ -554,5 +554,46 @@ impl<'a> VM<'a> {
             println!("-- gc end");
         }
     }
-    fn mark_roots(&self) {}
+
+    fn mark_roots(&mut self) {
+        for i in 0..self.stack_top {
+            VM::mark_value(&self.stack[i], self.debug_log_gc);
+        }
+
+        for (_, val) in self.globals.iter_mut() {
+            VM::mark_value(val, self.debug_log_gc);
+        }
+    }
+
+    fn mark_value(value: &Value, debug_log_gc: bool) {
+        match value {
+            Value::Bool(_) | Value::Nil | Value::Number(_) => {
+                return;
+            }
+            Value::ObjString(obj_string) => {
+                if debug_log_gc {
+                    println!("mark {}", value);
+                }
+                unsafe { (*(*obj_string)).is_marked = true };
+            }
+            Value::ObjFunction(obj_function) => {
+                if debug_log_gc {
+                    println!("mark {}", value);
+                }
+                unsafe { (*(*obj_function)).is_marked = true }
+            }
+            Value::ObjNative(obj_native) => {
+                if debug_log_gc {
+                    println!("mark {}", value);
+                }
+                unsafe { (*(*obj_native)).is_marked = true }
+            }
+            Value::ObjClosure(object_closure) => {
+                if debug_log_gc {
+                    println!("mark {}", value);
+                }
+                unsafe { (*(*object_closure)).is_marked = true }
+            }
+        }
+    }
 }
