@@ -21,6 +21,7 @@ pub struct VM<'a> {
     pub globals: HashMap<String, Value>,
     pub garbage_collector: &'a mut GarbageCollector,
     pub frames: ArrayVec<[CallFrame; FRAMES_MAX]>,
+    open_upvalues: Option<*mut ObjUpvalue>,
 }
 
 pub struct CallFrame {
@@ -95,6 +96,7 @@ impl<'a> VM<'a> {
             globals: HashMap::new(),
             garbage_collector,
             frames: ArrayVec::new(),
+            open_upvalues: None,
         }
     }
 
@@ -315,7 +317,32 @@ impl<'a> VM<'a> {
     }
 
     fn capture_upvalue(&mut self, location: usize) -> *const ObjUpvalue {
-        self.garbage_collector.heap_alloc(ObjUpvalue::new(location))
+        // Search for an existing upvalue for this location
+        let mut prev_upvalue: Option<*mut ObjUpvalue> = None;
+        let mut upvalue = self.open_upvalues;
+        while let Some(unwrap_upvalue) = upvalue {
+            if unsafe { (*unwrap_upvalue).location } <= location {
+                break;
+            }
+            prev_upvalue = Some(unwrap_upvalue);
+            upvalue = unsafe { (*unwrap_upvalue).next_upvalue };
+        }
+
+        if let Some(upvalue) = upvalue {
+            if unsafe { (*upvalue).location == location } {
+                return upvalue;
+            }
+        }
+
+        // If no existing upvalue, create a new one and insert it into the linked list
+        let mut new_upvalue = ObjUpvalue::new(location);
+        new_upvalue.next_upvalue = upvalue;
+        let new_upvalue_ptr = self.garbage_collector.heap_alloc(new_upvalue);
+        match prev_upvalue {
+            Some(prev_upvalue) => unsafe { (*prev_upvalue).next_upvalue = Some(new_upvalue_ptr) },
+            None => self.open_upvalues = Some(new_upvalue_ptr),
+        };
+        new_upvalue_ptr
     }
 
     fn read_byte(&mut self) -> u8 {

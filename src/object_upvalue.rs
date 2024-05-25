@@ -4,6 +4,7 @@ use crate::memory::GC;
 
 pub struct ObjUpvalue {
     pub location: usize,
+    pub next_upvalue: Option<*mut ObjUpvalue>,
     next: Option<*mut dyn GC>,
 }
 
@@ -12,6 +13,7 @@ impl ObjUpvalue {
         ObjUpvalue {
             location,
             next: None,
+            next_upvalue: None,
         }
     }
 }
