@@ -28,7 +28,7 @@ pub struct VM<'a> {
 }
 
 pub struct CallFrame {
-    pub closure: *const ObjClosure,
+    pub closure: *mut ObjClosure,
     pub ip: usize,
     pub first_slot: usize,
 }
@@ -36,7 +36,7 @@ pub struct CallFrame {
 impl Default for CallFrame {
     fn default() -> Self {
         CallFrame {
-            closure: std::ptr::null(),
+            closure: std::ptr::null_mut(),
             ip: 0,
             first_slot: 0,
         }
@@ -107,7 +107,13 @@ impl<'a> VM<'a> {
 
     pub fn interpret(&mut self, source: String) -> InterpretResult {
         self.define_native("clock", NativeFunction::Clock);
-        let mut compiler = compiler::Compiler::new(source.as_str(), self.allocator);
+        let mut compiler = compiler::Compiler::new(
+            source.as_str(),
+            self.allocator,
+            self.debug_stress_gc,
+            self.debug_log_gc,
+        );
+        compiler.prepare();
         match compiler.compile(true) {
             Some(function) => {
                 self.push_stack(Value::ObjFunction(function));
@@ -497,7 +503,7 @@ impl<'a> VM<'a> {
         }
     }
 
-    fn call(&mut self, closure: *const ObjClosure, arg_count: usize) -> bool {
+    fn call(&mut self, closure: *mut ObjClosure, arg_count: usize) -> bool {
         let function = unsafe { (*closure).function };
         let arity = unsafe { (*function).arity as usize };
         if arg_count != arity {
@@ -545,23 +551,42 @@ impl<'a> VM<'a> {
 
     fn collect_garbage(&mut self) {
         if self.debug_log_gc {
-            println!("-- gc begin");
+            println!("-- gc begin (vm)");
         }
 
         self.mark_roots();
 
         if self.debug_log_gc {
-            println!("-- gc end");
+            println!("-- gc end (vm)");
         }
     }
 
     fn mark_roots(&mut self) {
+        // Mark variables on the stack
         for i in 0..self.stack_top {
             VM::mark_value(&self.stack[i], self.debug_log_gc);
         }
 
+        // Mark variables in the globals table
         for (_, val) in self.globals.iter_mut() {
             VM::mark_value(val, self.debug_log_gc);
+        }
+
+        // Mark closures in call frames
+        for frame in self.frames.iter_mut() {
+            VM::mark_value(&Value::ObjClosure(frame.closure), self.debug_log_gc)
+        }
+
+        // Mark open upvalues
+        let mut upvalue = self.open_upvalues;
+        while let Some(unwrapped_upvalue) = upvalue {
+            unsafe {
+                if self.debug_log_gc {
+                    println!("mark {}", (*unwrapped_upvalue));
+                }
+                (*unwrapped_upvalue).is_marked = true;
+                upvalue = (*unwrapped_upvalue).next_upvalue;
+            }
         }
     }
 

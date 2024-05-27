@@ -6,6 +6,7 @@ pub struct ObjUpvalue {
     pub location: usize,
     pub next_upvalue: Option<*mut ObjUpvalue>,
     pub closed: Option<Value>,
+    pub is_marked: bool,
     next: Option<*mut dyn GC>,
 }
 
@@ -15,6 +16,7 @@ impl ObjUpvalue {
             location,
             next_upvalue: None,
             closed: None,
+            is_marked: false,
             next: None,
         }
     }

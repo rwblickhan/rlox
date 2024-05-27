@@ -1,6 +1,6 @@
 use crate::chunk::{Chunk, Opcode};
 use crate::debug::disassemble_chunk;
-use crate::memory::Allocator;
+use crate::memory::{Allocator, GC};
 use crate::object_closure::Upvalue;
 use crate::object_function::{FunctionType, ObjFunction};
 use crate::object_string::ObjString;
@@ -19,6 +19,8 @@ pub struct Compiler<'a> {
     panic_mode: bool,
     compiler_states: Vec<CompilerState<'a>>,
     allocator: &'a mut Allocator,
+    debug_stress_gc: bool,
+    debug_log_gc: bool,
 }
 
 pub struct CompilerState<'a> {
@@ -142,10 +144,14 @@ impl Precedence {
 }
 
 impl<'a> Compiler<'a> {
-    pub fn new(source: &'a str, allocator: &'a mut Allocator) -> Compiler<'a> {
+    pub fn new(
+        source: &'a str,
+        allocator: &'a mut Allocator,
+        debug_stress_gc: bool,
+        debug_log_gc: bool,
+    ) -> Compiler<'a> {
         let mut scanner = Scanner::new(source);
         let starting_token = Compiler::advance_to_start(&mut scanner);
-        let function = allocator.heap_alloc(ObjFunction::new(FunctionType::Script, None));
         Compiler {
             current: starting_token,
             previous: starting_token,
@@ -153,8 +159,15 @@ impl<'a> Compiler<'a> {
             had_error: false,
             panic_mode: false,
             allocator,
-            compiler_states: vec![CompilerState::new(function)],
+            compiler_states: vec![],
+            debug_stress_gc,
+            debug_log_gc,
         }
+    }
+
+    pub fn prepare(&mut self) {
+        let function = self.heap_alloc(ObjFunction::new(FunctionType::Script, None));
+        self.compiler_states.push(CompilerState::new(function));
     }
 
     // Parsing
@@ -251,9 +264,7 @@ impl<'a> Compiler<'a> {
 
     fn function(&mut self) {
         // Allocate the ObjFunction
-        let function = self
-            .allocator
-            .heap_alloc(ObjFunction::new(FunctionType::Function, None));
+        let function = self.heap_alloc(ObjFunction::new(FunctionType::Function, None));
         unsafe {
             (*function).name = Some(ObjString::new(self.previous.source));
         }
@@ -353,7 +364,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn identifier_constant(&mut self, name: &str) -> u8 {
-        let obj_str = self.allocator.heap_alloc(ObjString::new(name));
+        let obj_str = self.heap_alloc(ObjString::new(name));
         self.make_constant(Value::ObjString(obj_str))
     }
 
@@ -869,6 +880,35 @@ impl<'a> Compiler<'a> {
             return 0;
         }
         constant as u8
+    }
+
+    fn heap_alloc<T>(&mut self, obj: T) -> *mut T
+    where
+        T: GC + std::fmt::Display + 'static,
+    {
+        if self.debug_stress_gc {
+            self.collect_garbage()
+        }
+        self.allocator.heap_alloc(obj)
+    }
+
+    fn collect_garbage(&mut self) {
+        if self.debug_log_gc {
+            println!("-- gc begin (compiler)");
+        }
+
+        for state in self.compiler_states.iter_mut() {
+            unsafe {
+                if self.debug_log_gc {
+                    println!("mark {}", (*state.function))
+                }
+                (*state.function).is_marked = true;
+            }
+        }
+
+        if self.debug_log_gc {
+            println!("-- gc end (compiler)");
+        }
     }
 }
 
